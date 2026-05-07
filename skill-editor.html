@@ -1,0 +1,1648 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>技能配置工具 — Tower Defense v7</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0a1e; color:#eee; font:13px 'Segoe UI',sans-serif; display:flex; flex-direction:column; height:100vh; }
+header { background:#1a1a3e; padding:8px 16px; display:flex; align-items:center; gap:16px; border-bottom:1px solid #333; }
+header h1 { font-size:16px; color:#ffd93d; }
+.tab-bar { display:flex; gap:2px; }
+.tab-bar button { background:#1a1a3e; color:#aaa; border:1px solid #444; border-bottom:none; padding:6px 16px; cursor:pointer; border-radius:6px 6px 0 0; font-size:13px; }
+.tab-bar button.active { background:#0a0a1e; color:#ffd93d; border-color:#ffd93d; }
+.main { display:flex; flex:1; overflow:hidden; }
+.list-panel { width:280px; border-right:1px solid #333; overflow-y:auto; padding:8px; }
+.list-item { padding:6px 8px; cursor:pointer; border-radius:4px; margin-bottom:2px; font-size:12px; display:flex; justify-content:space-between; }
+.list-item:hover { background:#1a1a3e; }
+.list-item.selected { background:#1a2a4e; border:1px solid #4ecdc4; }
+.list-item .idx { color:#666; margin-right:6px; }
+.list-item .skills-count { color:#ffd93d; font-size:10px; }
+.edit-panel { flex:1; overflow-y:auto; padding:16px; }
+.section { margin-bottom:16px; }
+.section h3 { color:#4ecdc4; margin-bottom:8px; font-size:14px; border-bottom:1px solid #333; padding-bottom:4px; }
+.field-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:6px; }
+.field { display:flex; flex-direction:column; }
+.field label { color:#888; font-size:10px; margin-bottom:2px; }
+.field input, .field select { background:#1a1a3e; color:#eee; border:1px solid #444; border-radius:4px; padding:4px 6px; font-size:12px; }
+.field input:focus, .field select:focus { border-color:#4ecdc4; outline:none; }
+.skill-row { display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid #1a1a3e; }
+.skill-row:hover { background:#1a1a3e; }
+.skill-row input[type=checkbox] { width:16px; height:16px; cursor:pointer; }
+.skill-row .sk-name { width:80px; font-weight:bold; color:#ffd93d; font-size:12px; }
+.skill-row .sk-desc { color:#888; font-size:10px; flex:1; }
+.score-section { border-bottom: 1px solid #444; margin-bottom: 12px; padding-bottom: 8px; }
+.score-section-header { cursor: pointer; user-select: none; }
+.score-section-header:hover { color: #4ecdc4; }
+.score-row { font-size: 11px; color: #ccc; margin-left: 8px; }
+.score-weight-label { color: #ffd93d; margin-left: 4px; }
+.skill-params { display:flex; gap:4px; flex-wrap:wrap; }
+.skill-params label { color:#aaa; font-size:10px; }
+.skill-params input { width:60px; background:#0a0a1e; color:#eee; border:1px solid #444; border-radius:3px; padding:2px 4px; font-size:11px; }
+.skill-params input:focus { border-color:#ffd93d; outline:none; }
+.export-bar { background:#1a1a3e; border-top:1px solid #333; padding:8px 16px; display:flex; gap:8px; align-items:center; }
+.export-bar button { background:#1a3a3e; color:#4ecdc4; border:1px solid #4ecdc4; border-radius:4px; padding:6px 14px; cursor:pointer; font-size:12px; }
+.export-bar button:hover { background:#2a4a4e; }
+.export-bar .status { color:#4c4; font-size:11px; margin-left:8px; }
+.group-header { color:#95e1d3; font-size:11px; margin-top:8px; margin-bottom:4px; font-weight:bold; }
+.chapter-divider { color:#ffd93d; font-size:11px; padding:4px 0; margin-top:6px; border-top:1px solid #333; }
+/* resist editor */
+.resist-editor { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.resist-editor select { background:#1a1a3e; color:#eee; border:1px solid #444; border-radius:4px; padding:3px; font-size:11px; }
+.resist-tag { background:#2a2a4e; padding:2px 6px; border-radius:3px; font-size:11px; display:flex; align-items:center; gap:4px; }
+.resist-tag .del { color:#c44; cursor:pointer; }
+#score-defs-panel { width:260px; background:#1a1a1a; border-left:1px solid #333; flex-shrink:0; font-size:11px; overflow-y:auto; }
+#score-defs-panel .panel-header { padding:8px 12px; background:#252525; cursor:pointer; font-weight:bold; color:#ffd93d; user-select:none; display:flex; justify-content:space-between; }
+.score-def-row { display:flex; align-items:center; gap:6px; padding:2px 8px; }
+.score-def-row .sk-name { width:70px; }
+.score-def-row input { width:45px; }
+.score-def-ref { color:#555; font-size:10px; flex:1; }
+/* Score Help Modal */
+#score-help-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:flex-start; padding-top:40px; }
+#score-help-overlay.open { display:flex; }
+#score-help-box { background:#1a1a2e; border:1px solid #4ecdc4; border-radius:8px; width:560px; max-height:80vh; overflow-y:auto; padding:24px 28px; position:relative; font-size:12px; line-height:1.7; color:#ccc; }
+#score-help-box h2 { color:#ffd93d; margin:0 0 16px; font-size:15px; }
+#score-help-box h3 { color:#4ecdc4; margin:16px 0 6px; font-size:12px; border-bottom:1px solid #333; padding-bottom:3px; }
+#score-help-box table { width:100%; border-collapse:collapse; margin:6px 0; }
+#score-help-box th { color:#95e1d3; text-align:left; font-weight:normal; padding:3px 6px; background:#252540; }
+#score-help-box td { padding:3px 6px; border-top:1px solid #222; vertical-align:top; }
+#score-help-box code { background:#252525; padding:1px 5px; border-radius:3px; font-size:11px; color:#ffd93d; }
+#score-help-box .tip { background:#1a2a1a; border-left:3px solid #4c4; padding:6px 10px; margin-top:10px; border-radius:0 4px 4px 0; font-size:11px; }
+#score-help-close { position:absolute; top:12px; right:16px; background:none; border:none; color:#888; font-size:18px; cursor:pointer; line-height:1; }
+#score-help-close:hover { color:#fff; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚙️ 技能配置工具</h1>
+  <div class="tab-bar" id="tabs"></div>
+</header>
+<div class="main">
+  <div class="list-panel" id="list-panel"></div>
+  <div class="edit-panel" id="edit-panel">
+    <div style="color:#666;text-align:center;margin-top:40px;">← 選擇一個單位</div>
+  </div>
+  <div id="score-defs-panel">
+    <div class="panel-header" onclick="toggleScoreDefsPanel()" style="position:relative">⚙️ 技能評分基準 <span id="score-defs-toggle">▶</span><button onclick="event.stopPropagation();showScoreHelp()" title="評分系統說明" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:1px solid #888;border-radius:50%;width:18px;height:18px;color:#aaa;font-size:11px;cursor:pointer;line-height:16px;padding:0">?</button></div>
+    <div id="score-defs-body" style="display:none"></div>
+  </div>
+</div>
+<div class="export-bar" id="export-bar"></div>
+
+<script src="js/config.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/sends.js"></script>
+<script src="js/towers.js"></script>
+<script src="js/waves.js"></script>
+<script>
+// ============================================================
+// 深拷貝資料（編輯用）
+// ============================================================
+const editData = {
+  waves: JSON.parse(JSON.stringify(WAVES)),
+  sends: JSON.parse(JSON.stringify(INCOME_SENDS)),
+  aiSends: JSON.parse(JSON.stringify(AI_SENDS)),
+  elemBase: JSON.parse(JSON.stringify(ELEM_BASE)),
+  infusions: JSON.parse(JSON.stringify(INFUSIONS)),
+  tripleTowers: JSON.parse(JSON.stringify(TRIPLE_TOWERS)),
+  pureTowers: JSON.parse(JSON.stringify(PURE_TOWERS)),
+  basicTowers: JSON.parse(JSON.stringify(BASIC_TOWERS)),
+  towers: JSON.parse(JSON.stringify(TOWERS)),
+  config: JSON.parse(JSON.stringify(CONFIG)),
+  globalCaps: JSON.parse(JSON.stringify(GLOBAL_CAPS)),
+};
+
+const fileHandles = {};
+let jsDirHandle = null;
+const JS_DIR_FILES = { waves:'waves.js', sends:'sends.js', towers:'towers.js', config:'config.js', skills:'skills.js' };
+
+async function openJsDir() {
+  if (!window.showDirectoryPicker) return;
+  try {
+    const dh = await window.showDirectoryPicker({ mode: 'readwrite' });
+    jsDirHandle = dh;
+    for (const [key, filename] of Object.entries(JS_DIR_FILES)) {
+      try {
+        fileHandles[key] = await dh.getFileHandle(filename, { create: false });
+      } catch (_) {
+        // 該資料夾下找不到此檔，略過
+      }
+    }
+    showStatus(`✅ 已選取 js/ 資料夾，${Object.keys(fileHandles).length} 個檔案就緒`);
+    renderExportBar();
+  } catch (e) {
+    if (e.name !== 'AbortError') showStatus('⚠️ 無法開啟資料夾：' + e.message);
+  }
+}
+
+let currentTab = 'waves';
+let selectedIdx = -1;
+let scoreExpanded = true;
+
+// ============================================================
+// Tab 定義
+// ============================================================
+const TABS = [
+  { id: 'waves', label: '波次怪', category: 'enemy' },
+  { id: 'sends', label: '送兵', category: 'enemy' },
+  { id: 'towers', label: '塔', category: 'tower' },
+  { id: 'config', label: '設定', category: 'none' },
+];
+
+// ============================================================
+// 初始化
+// ============================================================
+function init() {
+  const tabBar = document.getElementById('tabs');
+  TABS.forEach(t => {
+    const btn = document.createElement('button');
+    btn.textContent = t.label;
+    btn.dataset.tab = t.id;
+    btn.onclick = () => switchTab(t.id);
+    tabBar.appendChild(btn);
+  });
+  switchTab('waves');
+  renderScoreDefsPanel();
+}
+
+function toggleScoreDefsPanel() {
+  const body = document.getElementById('score-defs-body');
+  const toggle = document.getElementById('score-defs-toggle');
+  if (body.style.display === 'none') {
+    body.style.display = 'block';
+    toggle.textContent = '▼';
+  } else {
+    body.style.display = 'none';
+    toggle.textContent = '▶';
+  }
+}
+
+function updateSkillDefScore(type, value) {
+  if (SKILL_DEFS[type]) {
+    SKILL_DEFS[type].scoreBase = parseFloat(value) || 0;
+    renderPanel();
+  }
+}
+function updateSkillDefConditional(type, value) {
+  if (SKILL_DEFS[type]) {
+    SKILL_DEFS[type].conditionalFactor = parseFloat(value);
+    renderPanel();
+  }
+}
+function updateLevelStd(lv, val) {
+  LEVEL_SCORE_STD[lv] = parseFloat(val) || 0;
+  renderPanel();
+}
+function updateRangeFactorK(val) {
+  RANGE_FACTOR_K = parseFloat(val) || 0;
+  renderPanel();
+}
+
+function renderScoreDefsPanel() {
+  const body = document.getElementById('score-defs-body');
+  if (!body) return;
+  const groupNames = { damage:'damage', control:'control', debuff:'debuff', buff:'buff', special:'special' };
+  const groups = {};
+  for (const [key, def] of Object.entries(SKILL_DEFS)) {
+    if (def.category !== 'tower') continue;
+    if (!groups[def.group]) groups[def.group] = [];
+    groups[def.group].push({ key, ...def });
+  }
+  const condDesc = {
+    ignite: '灼燒 uptime 假設（0~1）',
+    detonate: '3層觸發率假設（0~1）',
+  };
+  let html = '';
+  for (const [group, skills] of Object.entries(groups)) {
+    html += `<div class="group-header">${groupNames[group] || group}</div>`;
+    for (const sk of skills) {
+      const refInfo = sk.scorePrimary
+        ? `${sk.scorePrimary} / ${sk.scoreRef}`
+        : '固定';
+      let condHtml = '';
+      if (sk.conditionalFactor !== undefined) {
+        const desc = condDesc[sk.key] || '條件折扣（0~1）';
+        condHtml = ` <label title="${desc}"><span style="color:#fa8;font-size:10px">cond:</span><input type="number" step="0.05" min="0" max="1" value="${sk.conditionalFactor}" style="width:42px" onchange="updateSkillDefConditional('${sk.key}',this.value)"></label>`;
+      }
+      html += `<div class="score-def-row">
+        <span class="sk-name">${sk.name}</span>
+        <label>base:<input type="number" step="1" value="${sk.scoreBase}" onchange="updateSkillDefScore('${sk.key}',this.value)"></label>
+        ${condHtml}
+        <span class="score-def-ref">${refInfo}</span>
+      </div>`;
+    }
+  }
+  const capLabels = {
+    slowPct:         'slowPct cap',
+    atkSpdBonus:     'atkSpdBonus cap',
+    shredPerStack:   'shredPerStack',
+    shredMaxStacks:  'shredMaxStacks',
+    shredDecayRate:  'shredDecayRate (stacks/s)',
+    vulnPerStack:    'vulnPerStack',
+    vulnMaxStacks:   'vulnMaxStacks',
+    vulnDecayRate:   'vulnDecayRate (stacks/s)',
+    procMinInterval: 'procMinInterval (s)',
+    hpPctCd:         'hpPctCd (s)',
+  };
+  html += `<div style="margin-top:8px;border-top:1px solid #444;padding-top:6px;padding:6px 8px"><b>GLOBAL_CAPS</b></div>`;
+  for (const [key, val] of Object.entries(editData.globalCaps)) {
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;margin:2px 8px">
+      <span style="font-size:11px">${capLabels[key] || key}</span>
+      <input type="number" step="0.01" value="${val}" style="width:60px;font-size:11px;background:#1a1a1a;color:#ccc;border:1px solid #444;padding:1px 3px"
+        onchange="editData.globalCaps['${key}']=parseFloat(this.value)||0">
+    </div>`;
+  }
+  const lvKeys = ['lv1','lv2','lv3','lv4','lv5','lv6'];
+  html += `<div style="margin-top:8px;border-top:1px solid #444;padding:6px 8px"><b>LEVEL_SCORE_STD</b></div>`;
+  html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:0 8px 4px">`;
+  for (const lv of lvKeys) {
+    html += `<label style="font-size:11px">${lv}:<input type="number" step="1" value="${LEVEL_SCORE_STD[lv]}"
+      style="width:48px;font-size:11px;background:#1a1a1a;color:#ccc;border:1px solid #444;padding:1px 3px"
+      onchange="updateLevelStd('${lv}',this.value)"></label>`;
+  }
+  html += `</div>`;
+  html += `<div style="margin-top:4px;border-top:1px solid #444;padding:6px 8px"><b>RANGE_FACTOR_K</b></div>`;
+  html += `<div style="padding:0 8px 8px">`;
+  html += `<label style="font-size:11px">k:<input type="number" step="0.05" value="${RANGE_FACTOR_K}"
+    style="width:56px;font-size:11px;background:#1a1a1a;color:#ccc;border:1px solid #444;padding:1px 3px"
+    onchange="updateRangeFactorK(this.value)"></label>`;
+  html += `<span style="font-size:10px;color:#888;margin-left:8px">range3=${(1+(3-4)*RANGE_FACTOR_K).toFixed(2)}× range4=1.00× range5=${(1+(5-4)*RANGE_FACTOR_K).toFixed(2)}×</span>`;
+  html += `</div>`;
+  body.innerHTML = html;
+}
+
+function switchTab(tabId) {
+  currentTab = tabId;
+  selectedIdx = -1;
+  document.querySelectorAll('.tab-bar button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tabId);
+  });
+  renderList();
+  if (currentTab !== 'config') {
+    document.getElementById('edit-panel').innerHTML = '<div style="color:#666;text-align:center;margin-top:40px;">← 選擇一個單位</div>';
+  }
+  renderExportBar();
+}
+
+// ============================================================
+// 列表渲染
+// ============================================================
+function renderList() {
+  const panel = document.getElementById('list-panel');
+  panel.innerHTML = '';
+
+  if (currentTab === 'config') {
+    renderConfigPanel();
+    return;
+  }
+
+  if (currentTab === 'waves') {
+    const chapters = ['Ch1 基礎塔期 W1-4', 'Ch2 1元素期 W5-8', 'Ch3 2元素期 W9-12', 'Ch4 3元素期 W13-16', 'Ch5 全開期 W17-20'];
+    editData.waves.forEach((w, i) => {
+      if (i % 4 === 0) {
+        const div = document.createElement('div');
+        div.className = 'chapter-divider';
+        div.textContent = chapters[Math.floor(i / 4)];
+        panel.appendChild(div);
+      }
+      const item = document.createElement('div');
+      item.className = 'list-item' + (selectedIdx === i ? ' selected' : '');
+      const sc = (w.skills || []).length;
+      item.innerHTML = `<span><span class="idx">W${i+1}</span>${w.icon||''} ${w.name}${w.isBoss ? ' ⭐' : ''}</span><span class="skills-count">${sc > 0 ? sc + '技能' : ''}</span>`;
+      item.onclick = () => { selectedIdx = i; renderList(); renderEditor(); };
+      panel.appendChild(item);
+    });
+  } else if (currentTab === 'sends') {
+    // 玩家送兵
+    const hdr1 = document.createElement('div');
+    hdr1.className = 'chapter-divider';
+    hdr1.textContent = '玩家送兵';
+    panel.appendChild(hdr1);
+    editData.sends.forEach((s, i) => {
+      const item = document.createElement('div');
+      item.className = 'list-item' + (selectedIdx === i ? ' selected' : '');
+      const sc = (s.skills || []).length;
+      item.innerHTML = `<span>${s.icon} ${s.name}</span><span class="skills-count">${sc > 0 ? sc + '技能' : ''}</span>`;
+      item.onclick = () => { selectedIdx = i; renderList(); renderEditor(); };
+      panel.appendChild(item);
+    });
+    // AI 送兵
+    const hdr2 = document.createElement('div');
+    hdr2.className = 'chapter-divider';
+    hdr2.textContent = 'AI 送兵';
+    panel.appendChild(hdr2);
+    editData.aiSends.forEach((s, i) => {
+      const idx = editData.sends.length + i;
+      const item = document.createElement('div');
+      item.className = 'list-item' + (selectedIdx === idx ? ' selected' : '');
+      const sc = (s.enemy.skills || []).length;
+      item.innerHTML = `<span>${s.icon} ${s.name} (AI)</span><span class="skills-count">${sc > 0 ? sc + '技能' : ''}</span>`;
+      item.onclick = () => { selectedIdx = idx; renderList(); renderEditor(); };
+      panel.appendChild(item);
+    });
+  } else if (currentTab === 'towers') {
+    // Basic towers
+    const hdr1 = document.createElement('div');
+    hdr1.className = 'chapter-divider';
+    hdr1.textContent = '基礎塔';
+    panel.appendChild(hdr1);
+    let tIdx = 0;
+    for (const key of BASIC_KEYS) {
+      const b = editData.basicTowers[key];
+      b.levels.forEach((lv, li) => {
+        const item = document.createElement('div');
+        item.className = 'list-item' + (selectedIdx === tIdx ? ' selected' : '');
+        const sc = (lv.skills || []).length;
+        item.innerHTML = `<span>${b.icon} ${b.name} Lv${li+1}</span><span class="skills-count">${sc > 0 ? sc + '技能' : ''}</span>`;
+        const capturedIdx = tIdx;
+        item.onclick = () => { selectedIdx = capturedIdx; renderList(); renderEditor(); };
+        panel.appendChild(item);
+        tIdx++;
+      });
+    }
+    // Element towers Lv1-2
+    const hdr1b = document.createElement('div');
+    hdr1b.className = 'chapter-divider';
+    hdr1b.textContent = '元素塔 Lv1-2';
+    panel.appendChild(hdr1b);
+    for (const elem of ELEM_KEYS) {
+      const t = editData.towers[elem];
+      if (!t) continue;
+      t.levels.forEach((lv, li) => {
+        if (lv === null) return;
+        const item = document.createElement('div');
+        item.className = 'list-item' + (selectedIdx === tIdx ? ' selected' : '');
+        const sc = (lv.skills || []).length;
+        item.innerHTML = `<span>${t.icon} ${t.name} Lv${li+1}</span><span class="skills-count">${sc > 0 ? sc + '技能' : ''}</span>`;
+        const capturedIdx = tIdx;
+        item.onclick = () => { selectedIdx = capturedIdx; renderList(); renderEditor(); };
+        panel.appendChild(item);
+        tIdx++;
+      });
+    }
+    // Elem base
+    const hdr2 = document.createElement('div');
+    hdr2.className = 'chapter-divider';
+    hdr2.textContent = '元素基底 Lv3';
+    panel.appendChild(hdr2);
+    for (const elem of ELEM_KEYS) {
+      for (const base of BASIC_KEYS) {
+        const eb = editData.elemBase[elem][base];
+        const item = document.createElement('div');
+        item.className = 'list-item' + (selectedIdx === tIdx ? ' selected' : '');
+        const sc = (eb.skills || []).length;
+        item.innerHTML = `<span>${eb.icon} ${eb.name}</span><span class="skills-count">${sc > 0 ? sc + '技能' : ''}</span>`;
+        const capturedIdx = tIdx;
+        item.onclick = () => { selectedIdx = capturedIdx; renderList(); renderEditor(); };
+        panel.appendChild(item);
+        tIdx++;
+      }
+    }
+    // Infusions (Lv4 only)
+    for (const baseElem of ELEM_KEYS) {
+      const hdr = document.createElement('div');
+      hdr.className = 'chapter-divider';
+      hdr.textContent = `${ELEM[baseElem].icon} ${ELEM[baseElem].name}底注入 Lv4`;
+      panel.appendChild(hdr);
+      for (const injElem of ELEM_KEYS) {
+        const inf = editData.infusions[baseElem]?.[injElem];
+        if (!inf || !inf.lv4) continue;
+        const lv = inf.lv4;
+        const item = document.createElement('div');
+        item.className = 'list-item' + (selectedIdx === tIdx ? ' selected' : '');
+        const sc = (lv.skills || []).length;
+        item.innerHTML = `<span>${inf.icon} ${inf.name}</span><span class="skills-count">${sc > 0 ? sc + '技能' : ''}</span>`;
+        const capturedIdx = tIdx;
+        item.onclick = () => { selectedIdx = capturedIdx; renderList(); renderEditor(); };
+        panel.appendChild(item);
+        tIdx++;
+      }
+    }
+    // Triple Towers (Lv5)
+    const tripleHdr = document.createElement('div');
+    tripleHdr.className = 'chapter-divider';
+    tripleHdr.textContent = '三屬塔 Lv5';
+    panel.appendChild(tripleHdr);
+    for (const [key, triple] of Object.entries(editData.tripleTowers)) {
+      if (!triple.lv5) continue;
+      const lv = triple.lv5;
+      const item = document.createElement('div');
+      item.className = 'list-item' + (selectedIdx === tIdx ? ' selected' : '');
+      const sc = (lv.skills || []).length;
+      item.innerHTML = `<span>${triple.icon} ${triple.name}</span><span class="skills-count">${sc > 0 ? sc + '技能' : ''}</span>`;
+      const capturedIdx = tIdx;
+      item.onclick = () => { selectedIdx = capturedIdx; renderList(); renderEditor(); };
+      panel.appendChild(item);
+      tIdx++;
+    }
+    // Pure Towers (Lv5)
+    const pure5Hdr = document.createElement('div');
+    pure5Hdr.className = 'chapter-divider';
+    pure5Hdr.textContent = '純屬塔 Lv5（強化）';
+    panel.appendChild(pure5Hdr);
+    for (const [elem, pure] of Object.entries(editData.pureTowers)) {
+      if (!pure.lv5) continue;
+      const lv = pure.lv5;
+      const item = document.createElement('div');
+      item.className = 'list-item' + (selectedIdx === tIdx ? ' selected' : '');
+      const sc = (lv.skills || []).length;
+      const eIcon = ELEM[elem] ? ELEM[elem].icon : elem;
+      item.innerHTML = `<span>${eIcon + eIcon} ${pure.name} Lv5</span><span class="skills-count">${sc > 0 ? sc + '技能' : ''}</span>`;
+      const capturedIdx = tIdx;
+      item.onclick = () => { selectedIdx = capturedIdx; renderList(); renderEditor(); };
+      panel.appendChild(item);
+      tIdx++;
+    }
+    // Pure Towers (Lv6)
+    const pureHdr = document.createElement('div');
+    pureHdr.className = 'chapter-divider';
+    pureHdr.textContent = '純屬塔 Lv6（終極）';
+    panel.appendChild(pureHdr);
+    for (const [elem, pure] of Object.entries(editData.pureTowers)) {
+      if (!pure.lv6) continue;
+      const lv = pure.lv6;
+      const item = document.createElement('div');
+      item.className = 'list-item' + (selectedIdx === tIdx ? ' selected' : '');
+      const sc = (lv.skills || []).length;
+      item.innerHTML = `<span>${pure.icon} ${pure.name}</span><span class="skills-count">${sc > 0 ? sc + '技能' : ''}</span>`;
+      const capturedIdx = tIdx;
+      item.onclick = () => { selectedIdx = capturedIdx; renderList(); renderEditor(); };
+      panel.appendChild(item);
+      tIdx++;
+    }
+  }
+}
+
+// ============================================================
+// 取得/設定目前選中的單位資料
+// ============================================================
+function getSelectedUnit() {
+  if (selectedIdx < 0) return null;
+  if (currentTab === 'waves') return editData.waves[selectedIdx];
+  if (currentTab === 'sends') {
+    if (selectedIdx < editData.sends.length) return editData.sends[selectedIdx];
+    return editData.aiSends[selectedIdx - editData.sends.length].enemy;
+  }
+  if (currentTab === 'towers') return getTowerByFlatIdx(selectedIdx);
+  return null;
+}
+
+function getTowerByFlatIdx(idx) {
+  let i = 0;
+  for (const key of BASIC_KEYS) {
+    for (const lv of editData.basicTowers[key].levels) {
+      if (i === idx) return lv;
+      i++;
+    }
+  }
+  for (const elem of ELEM_KEYS) {
+    const t = editData.towers[elem];
+    if (!t) continue;
+    for (const lv of t.levels) {
+      if (lv === null) continue;
+      if (i === idx) return lv;
+      i++;
+    }
+  }
+  for (const elem of ELEM_KEYS) {
+    for (const base of BASIC_KEYS) {
+      if (i === idx) return editData.elemBase[elem][base];
+      i++;
+    }
+  }
+  for (const baseElem of ELEM_KEYS) {
+    for (const injElem of ELEM_KEYS) {
+      const inf = editData.infusions[baseElem]?.[injElem];
+      if (!inf || !inf.lv4) continue;
+      if (i === idx) { const o = inf.lv4; if (o.dmgType === undefined) o.dmgType = baseElem; return o; }
+      i++;
+    }
+  }
+  for (const [key, triple] of Object.entries(editData.tripleTowers)) {
+    if (!triple.lv5) continue;
+    if (i === idx) { const o = triple.lv5; if (o.dmgType === undefined) o.dmgType = key.split('_')[0]; return o; }
+    i++;
+  }
+  for (const [elem, pure] of Object.entries(editData.pureTowers)) {
+    if (!pure.lv5) continue;
+    if (i === idx) { const o = pure.lv5; if (o.dmgType === undefined) o.dmgType = elem; return o; }
+    i++;
+  }
+  for (const [elem, pure] of Object.entries(editData.pureTowers)) {
+    if (!pure.lv6) continue;
+    if (i === idx) { const o = pure.lv6; if (o.dmgType === undefined) o.dmgType = elem; return o; }
+    i++;
+  }
+  return null;
+}
+
+// ============================================================
+// 編輯面板渲染
+// ============================================================
+function renderEditor() {
+  const panel = document.getElementById('edit-panel');
+  const unit = getSelectedUnit();
+  if (!unit) { panel.innerHTML = ''; return; }
+
+  const cat = TABS.find(t => t.id === currentTab).category;
+  let html = '';
+
+  // 分數面板（頂部）
+  if (currentTab === 'towers') {
+    const bd = computeScoreBreakdown(unit);
+    if (bd) html += buildScoreHtml(bd);
+  }
+
+  // 屬性區
+  html += '<div class="section"><h3>📊 基本屬性</h3><div class="field-grid">';
+  const fields = getFieldsForTab();
+  for (const f of fields) {
+    if (unit[f.key] === undefined && !f.forceShow) continue;
+    const val = unit[f.key] !== undefined ? unit[f.key] : f.default;
+    if (f.type === 'resist') continue; // resist 另外處理
+    html += `<div class="field"><label>${f.label}</label>`;
+    if (f.type === 'select') {
+      html += `<select data-field="${f.key}" onchange="updateField('${f.key}', this.value, '${f.type}')">`;
+      for (const opt of f.options) html += `<option value="${opt.value}" ${val === opt.value ? 'selected' : ''}>${opt.label}</option>`;
+      html += '</select>';
+    } else if (f.type === 'bool') {
+      html += `<select data-field="${f.key}" onchange="updateField('${f.key}', this.value, 'bool')">
+        <option value="true" ${val ? 'selected' : ''}>是</option>
+        <option value="false" ${!val ? 'selected' : ''}>否</option></select>`;
+    } else {
+      html += `<input type="${f.type === 'number' ? 'number' : 'text'}" value="${typeof val === 'object' ? JSON.stringify(val) : val}" data-field="${f.key}" step="any" onchange="updateField('${f.key}', this.value, '${f.type}')">`;
+    }
+    html += '</div>';
+  }
+  html += '</div></div>';
+
+  // quota 區（玩家送兵）
+  if (currentTab === 'sends' && selectedIdx < editData.sends.length) {
+    const s = editData.sends[selectedIdx];
+    if (s.quota) {
+      html += '<div class="section"><h3>📊 配額 (每2波一階，10階)</h3><div class="field-grid">';
+      const labels = ['W1-2','W3-4','W5-6','W7-8','W9-10','W11-12','W13-14','W15-16','W17-18','W19-20'];
+      s.quota.forEach((q, qi) => {
+        html += `<div class="field"><label>${labels[qi]||'T'+(qi+1)}</label><input type="number" value="${q}" onchange="editData.sends[${selectedIdx}].quota[${qi}]=parseInt(this.value)||0"></div>`;
+      });
+      html += '</div></div>';
+    }
+  }
+
+  // resist 區（波次怪）
+  if (currentTab === 'waves') {
+    html += '<div class="section"><h3>🔰 抗性</h3>';
+    html += '<div id="resist-area"></div></div>';
+  }
+
+  // 技能區
+  html += '<div class="section"><h3>⚡ 技能配置</h3>';
+  const skillGroups = {};
+  for (const [key, def] of Object.entries(SKILL_DEFS)) {
+    if (def.category !== cat) continue;
+    if (!skillGroups[def.group]) skillGroups[def.group] = [];
+    skillGroups[def.group].push({ key, ...def });
+  }
+
+  const groupNames = { damage:'damage', control:'control', debuff:'debuff', buff:'buff', special:'special', passive:'passive' };
+  for (const [group, skills] of Object.entries(skillGroups)) {
+    html += `<div class="group-header">${groupNames[group] || group}</div>`;
+    for (const sk of skills) {
+      const active = unit.skills && unit.skills.find(s => s.type === sk.key);
+      const isEnabled = active && active.enabled;
+      const checked = isEnabled ? 'checked' : '';
+      const params = active ? { ...sk.defaults, ...active.params } : sk.defaults;
+      html += `<div class="skill-row">
+        <input type="checkbox" ${checked} onchange="toggleSkill('${sk.key}', this.checked)">
+        <span class="sk-name">${sk.name}</span>
+        <div class="skill-params">`;
+      for (const [pk, pv] of Object.entries(params)) {
+        html += `<label>${pk}:<input type="number" step="any" value="${pv}" data-skill="${sk.key}" data-param="${pk}" oninput="updateSkillParam('${sk.key}','${pk}',this.value)" ${!isEnabled ? 'disabled' : ''}></label>`;
+      }
+      const sw = active ? (active.scoreWeight !== undefined ? active.scoreWeight : 1.0) : 1.0;
+      html += `<label class="score-weight-label" title="分數個別乘數：1.0=全額，0.5=折半（只影響此塔；全局調整用右側⚙️面板）">weight:<input type="number" step="0.1" min="0" value="${sw}" data-skill="${sk.key}" oninput="updateSkillWeight('${sk.key}',this.value)" ${!isEnabled ? 'disabled' : ''}></label>`;
+      const descText = (typeof getSkillDesc === 'function' && active?.params)
+        ? getSkillDesc([{ type: sk.key, params: active.params }])
+        : sk.desc;
+      html += `</div><span class="sk-desc">${descText}</span></div>`;
+    }
+  }
+  html += '</div>';
+
+  panel.innerHTML = html;
+
+  // resist 渲染
+  if (currentTab === 'waves') renderResist();
+}
+
+function buildScoreHtml(bd) {
+  const targetLabel = (bd.autoTarget !== bd.target)
+    ? `${bd.target} <small>（手動覆蓋）</small>` : `${bd.target}`;
+  const balanceColor = bd.balance > 110 ? '#ff6b6b' : bd.balance < 70 ? '#ffd93d' : '#95e1d3';
+  const balanceIcon  = bd.balance > 110 ? ' ⚠️ 超出預算' : bd.balance < 70 ? ' 💡 可加強' : ' ✓';
+  const aoeNote   = bd.aoeMultiplier > 1 ? ` <small>（AOE ×${bd.aoeMultiplier.toFixed(2)}）</small>` : '';
+  const rangeNote = bd.rangeFactor !== 1.0 ? ` <span style="color:#aaa;font-size:0.85em">射程×${bd.rangeFactor}</span>` : '';
+  const summary = `<b style="color:${balanceColor}">${bd.total}/${bd.target} ${bd.balance}%${balanceIcon}</b>`;
+  let h = `<div class="section score-section">`;
+  h += `<h3 class="score-section-header" onclick="toggleScoreSection()">📊 分數分析 ${scoreExpanded ? '▼' : '▶'} <span style="font-weight:normal;font-size:0.85em">${scoreExpanded ? '' : summary}</span></h3>`;
+  h += `<div style="${scoreExpanded ? '' : 'display:none'}">`;
+  h += `<div style="color:#aaa;font-size:0.9em">${bd.lv} 標準 <b>${bd.lvStd}</b> × 塔級調整 <b>${bd.adj}</b> = 目標 ${targetLabel}</div>`;
+  h += `<div>DPS 分：<b>${bd.dpsScoreActual}</b>${aoeNote}${rangeNote}</div>`;
+  h += `<div>skillTotal: <b>${bd.skillTotal}</b></div>`;
+  bd.rows.forEach(r => {
+    let rowExtra = '';
+    if (r.conditionalFactor === 0) {
+      rowExtra = ` <span style="color:#f88;font-size:10px">⚠️ 缺前置</span>`;
+    } else if (r.conditionalFactor !== undefined) {
+      rowExtra = ` <span style="color:#fa8;font-size:10px">⚡×${r.conditionalFactor}（條件性）</span>`;
+    }
+    if (r.atkSpdMult !== undefined && r.atkSpdMult !== 1) {
+      rowExtra += ` <span style="color:#8cf;font-size:10px">🏃×${r.atkSpdMult}（攻速）</span>`;
+    }
+    h += `<div class="score-row">　${r.name} ×${r.weight} → <b>${r.score}</b> pts${rowExtra}</div>`;
+  });
+  h += `<hr style="border-color:#333;margin:4px 0">`;
+  h += `<div>總分：<b style="color:${balanceColor}">${bd.total}</b> / ${bd.target}　<b style="color:${balanceColor}">${bd.balance}%${balanceIcon}</b></div>`;
+  h += `</div>`; // collapsible body
+  h += `</div>`; // score-section
+  return h;
+}
+
+function toggleScoreSection() {
+  scoreExpanded = !scoreExpanded;
+  renderPanel();
+}
+
+function renderPanel() {
+  const panel = document.getElementById('edit-panel');
+  const unit = getSelectedUnit();
+  if (!panel || !unit || currentTab !== 'towers') return;
+  const existing = panel.querySelector('.score-section');
+  if (!existing) return;
+  const bd = computeScoreBreakdown(unit);
+  if (!bd) return;
+  existing.outerHTML = buildScoreHtml(bd);
+}
+
+function getFieldsForTab() {
+  if (currentTab === 'waves') return [
+    { key:'name', label:'名稱', type:'text' },
+    { key:'count', label:'數量', type:'number' },
+    { key:'hp', label:'HP', type:'number' },
+    { key:'speed', label:'速度', type:'number' },
+    { key:'armor', label:'護甲', type:'number' },
+    { key:'color', label:'顏色', type:'text' },
+    { key:'icon', label:'圖示', type:'text' },
+    { key:'killGold', label:'擊殺金', type:'number' },
+    { key:'dmgToBase', label:'基地傷害', type:'number' },
+    { key:'isBoss', label:'Boss', type:'bool' },
+    { key:'elem', label:'元素', type:'text' },
+  ];
+  if (currentTab === 'sends') return [
+    { key:'name', label:'名稱', type:'text' },
+    { key:'icon', label:'圖示', type:'text' },
+    { key:'cost', label:'費用', type:'number' },
+    { key:'income', label:'Income', type:'number' },
+    { key:'count', label:'數量', type:'number' },
+    { key:'hp', label:'HP', type:'number' },
+    { key:'speed', label:'速度', type:'number' },
+    { key:'armor', label:'護甲', type:'number' },
+    { key:'color', label:'顏色', type:'text' },
+    { key:'dmgToBase', label:'基地傷害', type:'number' },
+    { key:'desc', label:'描述', type:'text' },
+  ];
+  if (currentTab === 'towers') return [
+    { key:'damage', label:'傷害', type:'number' },
+    { key:'atkSpd', label:'攻速', type:'number' },
+    { key:'range', label:'射程', type:'number' },
+    { key:'aoe', label:'AOE', type:'number' },
+    { key:'cost', label:'費用', type:'number' },
+    { key:'dmgType', label:'傷害元素', type:'select', forceShow: true, default: null,
+      options: [
+        { value: '', label: '（預設/基底元素）' },
+        ...ELEM_KEYS.map(e => ({ value: e, label: ELEM[e].icon + ' ' + ELEM[e].name }))
+      ]
+    },
+    { key:'score_adj', label:'塔級調整', type:'number', forceShow: true, default: 1.0 },
+    { key:'scoreTarget', label:'目標分數(覆蓋)', type:'number', forceShow: true, default: 0 },
+    { key:'desc', label:'描述', type:'text' },
+  ];
+  return [];
+}
+
+// ============================================================
+// 欄位更新
+// ============================================================
+function updateField(key, value, type) {
+  const unit = getSelectedUnit();
+  if (!unit) return;
+  if (type === 'number') unit[key] = parseFloat(value) || 0;
+  else if (type === 'bool') unit[key] = value === 'true';
+  else if (type === 'select') unit[key] = value === '' ? null : value;
+  else unit[key] = value;
+  renderList();
+  if (currentTab === 'towers') renderPanel();
+}
+
+// ============================================================
+// 抗性編輯
+// ============================================================
+function renderResist() {
+  const area = document.getElementById('resist-area');
+  if (!area) return;
+  const unit = getSelectedUnit();
+  if (!unit) return;
+
+  let html = '<div class="resist-editor">';
+  if (typeof unit.resist === 'string') {
+    html += `<select onchange="setResistMode(this.value)">
+      <option value="random" ${unit.resist==='random'?'selected':''}>隨機單抗</option>
+      <option value="random_dual" ${unit.resist==='random_dual'?'selected':''}>隨機雙抗</option>
+      <option value="custom">自定義</option></select>`;
+  } else {
+    html += `<select onchange="setResistMode(this.value)">
+      <option value="custom" selected>自定義</option>
+      <option value="random">隨機單抗</option>
+      <option value="random_dual">隨機雙抗</option></select> `;
+    const resist = unit.resist || {};
+    for (const [el, val] of Object.entries(resist)) {
+      const eInfo = ELEM[el] || { icon: el, name: el };
+      html += `<span class="resist-tag">${eInfo.icon}${Math.round(val*100)}%<input type="number" step="0.05" value="${val}" style="width:50px;background:#0a0a1e;color:#eee;border:1px solid #444;border-radius:3px;padding:1px 3px;font-size:10px;margin:0 2px;" onchange="setResistVal('${el}',this.value)"><span class="del" onclick="delResist('${el}')">✕</span></span>`;
+    }
+    // 新增抗性
+    const available = ELEM_KEYS.filter(e => !resist[e]);
+    if (available.length > 0) {
+      html += `<select id="add-resist-sel"><option value="">+抗性</option>`;
+      for (const e of available) html += `<option value="${e}">${ELEM[e].icon}${ELEM[e].name}</option>`;
+      html += `</select><button onclick="addResist()" style="background:#1a3a3e;color:#4ecdc4;border:1px solid #4ecdc4;border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;">加</button>`;
+    }
+  }
+  html += '</div>';
+  area.innerHTML = html;
+}
+function setResistMode(mode) {
+  const unit = getSelectedUnit();
+  if (mode === 'random' || mode === 'random_dual') unit.resist = mode;
+  else unit.resist = {};
+  renderResist();
+}
+function setResistVal(elem, val) { const unit = getSelectedUnit(); unit.resist[elem] = parseFloat(val) || 0; }
+function delResist(elem) { const unit = getSelectedUnit(); delete unit.resist[elem]; renderResist(); }
+function addResist() {
+  const sel = document.getElementById('add-resist-sel');
+  if (!sel || !sel.value) return;
+  const unit = getSelectedUnit();
+  if (typeof unit.resist === 'string') unit.resist = {};
+  unit.resist[sel.value] = 0.3;
+  renderResist();
+}
+
+// ============================================================
+// 技能操作
+// ============================================================
+function toggleSkill(type, checked) {
+  const unit = getSelectedUnit();
+  if (!unit) return;
+  if (!unit.skills) unit.skills = [];
+  if (checked) {
+    const existing = unit.skills.find(s => s.type === type);
+    if (existing) {
+      existing.enabled = true;
+    } else {
+      unit.skills.push({ type, enabled: true, params: { ...SKILL_DEFS[type].defaults }, scoreWeight: 1.0 });
+    }
+  } else {
+    const sk = unit.skills.find(s => s.type === type);
+    if (sk) sk.enabled = false;
+  }
+  renderEditor();
+  renderList();
+}
+
+function updateSkillParam(type, param, value) {
+  const unit = getSelectedUnit();
+  if (!unit || !unit.skills) return;
+  const sk = unit.skills.find(s => s.type === type);
+  if (sk) { sk.params[param] = parseFloat(value) || 0; renderPanel(); }
+}
+
+function updateSkillWeight(type, value) {
+  const unit = getSelectedUnit();
+  if (!unit || !unit.skills) return;
+  const sk = unit.skills.find(s => s.type === type);
+  if (sk) {
+    sk.scoreWeight = parseFloat(value) || 1.0;
+    renderPanel();
+  }
+}
+
+// ============================================================
+// 匯出邏輯
+// ============================================================
+async function openFileHandle(key) {
+  if (!window.showOpenFilePicker) return;
+  try {
+    const [fh] = await window.showOpenFilePicker({
+      types: [{ description: 'JavaScript', accept: { 'text/javascript': ['.js'] } }],
+      id: key,
+    });
+    fileHandles[key] = fh;
+    showStatus(`✅ 已選取 ${fh.name}，按「✏️ 寫入」直接覆寫`);
+    renderExportBar();
+  } catch (e) {
+    if (e.name !== 'AbortError') showStatus('⚠️ 無法開啟：' + e.message);
+  }
+}
+
+async function writeToHandle(key, text) {
+  const fh = fileHandles[key];
+  if (!fh) { showStatus('⚠️ 尚未選取檔案'); return; }
+  try {
+    const w = await fh.createWritable();
+    await w.write(text);
+    await w.close();
+    showStatus(`✅ 已寫入 ${fh.name}`);
+  } catch (e) {
+    showStatus('⚠️ 寫入失敗：' + e.message);
+  }
+}
+
+async function writeSkillsWithPatch(newDataText) {
+  const fh = fileHandles['skills'];
+  if (!fh) { showStatus('⚠️ 尚未選取 skills.js'); return; }
+  try {
+    const file = await fh.getFile();
+    const original = await file.text();
+    // 找工具函數起點（// 工具函數 區塊 或第一個 function）
+    const funcMarker = original.search(/^\/\/ =+\r?\n\/\/ 工具函數|^function\s/m);
+    const funcPart = funcMarker !== -1 ? '\n' + original.slice(funcMarker) : '';
+    const w = await fh.createWritable();
+    await w.write(newDataText + funcPart);
+    await w.close();
+    showStatus('✅ 已寫入 skills.js（函數部分保留原始）');
+  } catch (e) {
+    showStatus('⚠️ 寫入失敗：' + e.message);
+  }
+}
+
+function renderExportBar() {
+  const bar = document.getElementById('export-bar');
+  const supportsWrite = !!window.showOpenFilePicker;
+
+  function btnSet(key, exportFn, filename) {
+    const fh = fileHandles[key];
+    const openBtn = supportsWrite
+      ? `<button onclick="openFileHandle('${key}')" title="選取本機 ${filename}" style="padding:2px 6px">📂</button>`
+      : '';
+    const actionBtn = (supportsWrite && fh)
+      ? `<button onclick="${exportFn}('write')">✏️ 寫入 ${filename}</button>`
+      : `<button onclick="${exportFn}('download')">💾 下載 ${filename}</button>`;
+    return `<button onclick="${exportFn}('copy')">📋 複製 ${filename}</button>${openBtn}${actionBtn}`;
+  }
+
+  const dirBtn = window.showDirectoryPicker
+    ? `<button onclick="openJsDir()" title="選取遊戲根目錄的 js/ 資料夾，自動綁定所有 js 檔" style="padding:2px 8px;${jsDirHandle ? 'color:#4c4' : ''}">${jsDirHandle ? '✅ js/' : '📁 js/'}</button> `
+    : '';
+  let html = dirBtn;
+  if (currentTab === 'waves')        html += btnSet('waves',  'exportWaves',  'waves.js');
+  else if (currentTab === 'sends')   html += btnSet('sends',  'exportSends',  'sends.js');
+  else if (currentTab === 'towers')  html += btnSet('towers', 'exportTowers', 'towers.js');
+  else if (currentTab === 'config')  html += btnSet('config', 'exportConfig', 'config.js');
+
+  html += ' <span style="margin-left:6px;border-left:1px solid #555;padding-left:8px">' + btnSet('skills', 'exportSkills', 'skills.js') + '</span>';
+  html += '<span class="status" id="export-status"></span>';
+  bar.innerHTML = html;
+}
+
+function showStatus(msg) {
+  const el = document.getElementById('export-status');
+  if (el) { el.textContent = msg; setTimeout(() => el.textContent = '', 3000); }
+}
+
+function doExport(text, filename, mode) {
+  const key = filename.replace('.js', '');
+  if (mode === 'copy') {
+    navigator.clipboard.writeText(text).then(() => showStatus('✅ 已複製到剪貼簿'));
+  } else if (mode === 'write') {
+    if (key === 'skills') {
+      writeSkillsWithPatch(text);
+    } else {
+      writeToHandle(key, text);
+    }
+  } else {
+    const blob = new Blob([text], { type: 'text/javascript' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    showStatus('✅ 已下載 ' + filename);
+  }
+}
+
+// ============================================================
+// 分數分析
+// ← 主要調整點：修改下方數值即可改變各等級基準分（需同步更新 dps-calc.html）
+// ============================================================
+const LEVEL_SCORE_STD = { lv1: 20, lv2: 45, lv3: 80, lv4: 160, lv5: 280, lv6: 440 };
+const ATKSPD_REF     = { lv3: 1.2, lv4: 1.2, lv5: 1.2, lv6: 1.5 };
+const AOE_DENSITY    = 0.5;
+let RANGE_FACTOR_K   = 0.2; // 每單位射程差的 DPS 分數增幅；基準 range=4，有效區間 3~5
+
+function costToLv(cost) {
+  if (cost <= 50)  return 'lv1';
+  if (cost <= 80)  return 'lv2';
+  if (cost <= 130) return 'lv3';
+  if (cost <= 250) return 'lv4';
+  if (cost <= 400) return 'lv5';
+  return 'lv6';
+}
+
+function computeScoreBreakdown(unit) {
+  if (!unit || currentTab !== 'towers') return null;
+  const lv         = costToLv(unit.cost || 0);
+  const lvStd      = LEVEL_SCORE_STD[lv] || 0;
+  const adj        = (unit.score_adj !== undefined) ? unit.score_adj : 1.0;
+  const autoTarget = Math.round(lvStd * adj);
+  const target     = (unit.scoreTarget && unit.scoreTarget !== 0) ? unit.scoreTarget : autoTarget;
+
+  // 技能分
+  const skills = (unit.skills || []).filter(s => s.enabled);
+  const rows = skills.map(s => {
+    const def = SKILL_DEFS[s.type];
+    if (!def || !def.scoreBase) return { name: def ? def.name : s.type, score: 0 };
+    let score = def.scoreBase;
+    if (def.scorePrimary && def.scoreRef) {
+      const cur = (s.params && s.params[def.scorePrimary] !== undefined)
+        ? s.params[def.scorePrimary]
+        : def.defaults[def.scorePrimary];
+      score = def.scoreBase * (cur / def.scoreRef);
+    }
+    // scoreFactors：次要參數乘數（可選，不設則不影響計算）
+    if (def.scoreFactors && def.scoreFactors.length > 0) {
+      for (const f of def.scoreFactors) {
+        const fVal = (s.params && s.params[f.param] !== undefined)
+          ? s.params[f.param]
+          : (def.defaults[f.param] ?? 1);
+        score *= fVal / f.ref;  // fVal = f.ref 時 ×1.0（中性值）
+      }
+    }
+    // conditionalFactor：條件性技能（需前置技能才能觸發）
+    let conditionalFactor;
+    if (def.requires && def.conditionalFactor !== undefined) {
+      const hasPre = skills.some(p => p.enabled && p.type === def.requires);
+      if (hasPre) {
+        score *= def.conditionalFactor;
+        conditionalFactor = def.conditionalFactor;
+      } else {
+        score = 0;
+        conditionalFactor = 0;
+      }
+    }
+    // atkSpdSensitive 正規化：依塔的實際攻速修正 score
+    let atkSpdMult;
+    if (def.atkSpdSensitive && unit.atkSpd) {
+      const atkRef = ATKSPD_REF[lv] ?? 1.0;
+      const mult = unit.atkSpd / atkRef;
+      score *= mult;
+      atkSpdMult = Math.round(mult * 100) / 100;
+    }
+    const weight = (s.scoreWeight !== undefined) ? s.scoreWeight : 1.0;
+    score = Math.round(score * weight * 10) / 10;
+    return { name: def.name, score, weight, conditionalFactor, atkSpdMult };
+  });
+  const skillTotal = Math.round(rows.reduce((a, r) => a + r.score, 0) * 10) / 10;
+
+  // DPS 分（含 AOE 乘數）
+  const dpsRaw         = (unit.damage || 0) * (unit.atkSpd || 0);
+  const aoeMultiplier  = 1 + (unit.aoe || 0) * AOE_DENSITY;
+  const effectiveDPS   = Math.round(dpsRaw * aoeMultiplier * 10) / 10;
+  const rangeFactor    = Math.round((1.0 + ((unit.range || 4) - 4) * RANGE_FACTOR_K) * 100) / 100;
+  const dpsScoreActual = Math.round(effectiveDPS * rangeFactor * 10) / 10;
+
+  // 總分與平衡度
+  const total   = Math.round((dpsScoreActual + skillTotal) * 10) / 10;
+  const balance = target > 0 ? Math.round(total / target * 100) : 0;
+
+  return { target, rows, skillTotal, dpsScoreActual, effectiveDPS, rangeFactor, aoeMultiplier,
+           total, balance, lv, lvStd, adj, autoTarget };
+}
+
+// ============================================================
+// 格式化工具
+// ============================================================
+function fmtSkills(skills) {
+  if (!skills || skills.length === 0) return '[]';
+  const parts = skills.filter(s => s.enabled !== false).map(s => {
+    const allParams = s.params || {};
+    if (Object.keys(allParams).length === 0) return `makeSkill('${s.type}')`;
+    const pStr = JSON.stringify(allParams).replace(/"(\w+)":/g, '$1:');
+    return `makeSkill('${s.type}',${pStr})`;
+  });
+  return '[' + parts.join(', ') + ']';
+}
+
+function fmtResist(resist) {
+  if (resist === 'random') return "'random'";
+  if (resist === 'random_dual') return "'random_dual'";
+  if (!resist || typeof resist !== 'object' || Object.keys(resist).length === 0) return '{}';
+  const parts = Object.entries(resist).map(([k,v]) => `${k}:${v}`);
+  return '{' + parts.join(',') + '}';
+}
+
+// ============================================================
+// 匯出 waves.js
+// ============================================================
+function exportWaves(mode) {
+  const chapters = [
+    '第一章：基礎塔期 (W1-4)',
+    '第二章：1 元素期 (W5-8)',
+    '第三章：2 元素期 (W9-12)',
+    '第四章：3 元素期 (W13-16)',
+    '第五章：全開期 (W17-20)',
+  ];
+  const chapterDescs = [
+    '無元素、無技能，教學期。W3 後選元素。',
+    'W6 後選第 2 元素',
+    'W9 後選第 3 元素，W12 後選第 4 元素',
+    '全面被動，高壓',
+    '極限壓力',
+  ];
+
+  let lines = [];
+  lines.push('// ============================================================');
+  lines.push('// WAVE DEFINITIONS');
+  lines.push('// skills[]：技能配置，Boss isBoss 保留（視覺用），韌性為 tenacity 技能');
+  lines.push('// ============================================================');
+  lines.push('const WAVES = [');
+
+  editData.waves.forEach((w, i) => {
+    if (i % 4 === 0) {
+      const ch = Math.floor(i / 4);
+      lines.push(`  // ═══ ${chapters[ch]} ═══ ${chapterDescs[ch]}`);
+    }
+
+    let parts = [];
+    parts.push(`name: '${w.name}'`);
+    parts.push(`count: ${w.count}`);
+    parts.push(`hp: ${w.hp}`);
+    parts.push(`speed: ${w.speed}`);
+    parts.push(`armor: ${w.armor}`);
+    parts.push(`resist: ${fmtResist(w.resist)}`);
+    parts.push(`skills: ${fmtSkills(w.skills)}`);
+    parts.push(`color: '${w.color}'`);
+    if (w.elem) parts.push(`elem: '${w.elem}'`);
+    parts.push(`icon: '${w.icon}'`);
+    if (w.isBoss) parts.push('isBoss: true');
+    parts.push(`killGold: ${w.killGold || 0}`);
+    if (w.dmgToBase && w.dmgToBase > 1) parts.push(`dmgToBase: ${w.dmgToBase}`);
+
+    const comma = i < editData.waves.length - 1 ? ',' : ',';
+    lines.push(`  { ${parts.join(', ')} }${comma}`);
+    if (i % 4 === 3 && i < editData.waves.length - 1) lines.push('');
+  });
+
+  lines.push('];');
+  lines.push('');
+  lines.push('// W3, W6, W9, W12 過關後選元素（共 4 次）');
+  lines.push('const ELEM_WAVES = [3, 6, 9, 12];');
+  lines.push('');
+
+  doExport(lines.join('\n'), 'waves.js', mode);
+}
+
+// ============================================================
+// 匯出 sends.js
+// ============================================================
+function exportSends(mode) {
+  let lines = [];
+  lines.push('// ============================================================');
+  lines.push('// INCOME SENDS — LTW 式送兵系統（6 階）');
+  lines.push('// 每種兵有獨立配額，每波重置。quota 每 2 波一階（共 10 階）');
+  lines.push('// v7: skills[] 技能配置');
+  lines.push('// ============================================================');
+  lines.push('const INCOME_SENDS = [');
+
+  // 表頭註解
+  lines.push('  //                                                                                                                                       W1-2 W3-4 W5-6 W7-8 W9-10 W11-12 W13-14 W15-16 W17-18 W19-20');
+
+  editData.sends.forEach((s, i) => {
+    let parts = [];
+    parts.push(`id: '${s.id}'`);
+    parts.push(`name: '${s.name}'`);
+    parts.push(`icon: '${s.icon}'`);
+    parts.push(`cost: ${s.cost}`);
+    parts.push(`income: ${s.income}`);
+    parts.push(`count: ${s.count}`);
+    parts.push(`hp: ${s.hp}`);
+    parts.push(`speed: ${s.speed}`);
+    parts.push(`armor: ${s.armor}`);
+    parts.push(`dmgToBase: ${s.dmgToBase}`);
+    parts.push(`color: '${s.color}'`);
+    parts.push(`desc: '${s.desc}'`);
+    parts.push(`skills: ${fmtSkills(s.skills)}`);
+    parts.push(`quota: [${s.quota.join(',')}]`);
+    const comma = i < editData.sends.length - 1 ? ',' : ',';
+    lines.push(`  { ${parts.join(', ')} }${comma}`);
+  });
+  lines.push('];');
+  lines.push('');
+
+  // getSendQuota
+  lines.push('// 取得某兵種在某波次的配額（每 2 波一階，共 10 階）');
+  lines.push('function getSendQuota(sendId, wave) {');
+  lines.push("  var s = INCOME_SENDS.find(function(s) { return s.id === sendId; });");
+  lines.push('  if (!s) return 0;');
+  lines.push('  var tier = Math.min(9, Math.floor((wave - 1) / 2));');
+  lines.push('  return s.quota[tier];');
+  lines.push('}');
+  lines.push('');
+
+  // AI_SENDS
+  lines.push('// ============================================================');
+  lines.push('// AI SENDS — AI 花金幣送兵攻擊玩家');
+  lines.push('// ============================================================');
+  lines.push('const AI_SENDS = [');
+
+  editData.aiSends.forEach((s, i) => {
+    const e = s.enemy;
+    let eParts = [];
+    eParts.push(`hp: ${e.hp}`);
+    eParts.push(`speed: ${e.speed}`);
+    eParts.push(`armor: ${e.armor}`);
+    eParts.push(`resist: {}`);
+    eParts.push(`skills: ${fmtSkills(e.skills)}`);
+    eParts.push(`color: '${e.color}'`);
+    eParts.push(`dmgToBase: ${e.dmgToBase}`);
+
+    let parts = [];
+    parts.push(`id: '${s.id}'`);
+    parts.push(`name: '${s.name}'`);
+    parts.push(`icon: '${s.icon}'`);
+    parts.push(`cost: ${s.cost}`);
+    parts.push(`income: ${s.income}`);
+    parts.push(`count: ${s.count}`);
+    const comma = i < editData.aiSends.length - 1 ? ',' : ',';
+    lines.push(`  { ${parts.join(', ')},`);
+    lines.push(`    enemy: { ${eParts.join(', ')} }}${comma}`);
+  });
+  lines.push('];');
+  lines.push('');
+
+  doExport(lines.join('\n'), 'sends.js', mode);
+}
+
+// ============================================================
+// 匯出 towers.js
+// ============================================================
+function exportTowers(mode) {
+  let lines = [];
+
+  // ELEM
+  lines.push('// ============================================================');
+  lines.push('// ELEMENTS — 只有 3 元素');
+  lines.push('// ============================================================');
+  lines.push('const ELEM = {');
+  for (const [k, v] of Object.entries(ELEM)) {
+    lines.push(`  ${k}:  { name: '${v.name}', color: '${v.color}', icon: '${v.icon}' },`);
+  }
+  lines.push('};');
+  lines.push("const ELEM_KEYS = ['" + ELEM_KEYS.join("', '") + "'];");
+  lines.push('');
+
+  // BASIC_TOWERS
+  lines.push('// ============================================================');
+  lines.push('// BASIC TOWERS — 基礎塔（無元素，Ch1 W1-4 使用）');
+  lines.push('// ============================================================');
+  lines.push('const BASIC_TOWERS = {');
+  for (const key of BASIC_KEYS) {
+    const b = editData.basicTowers[key];
+    lines.push(`  ${key}: {`);
+    lines.push(`    name: '${b.name}', icon: '${b.icon}', elem: null,`);
+    lines.push(`    levels: [`);
+    b.levels.forEach((lv, li) => {
+      lines.push(`      { damage: ${lv.damage}, atkSpd: ${lv.atkSpd}, range: ${lv.range}, aoe: ${lv.aoe}, cost: ${lv.cost}, skills: ${fmtSkills(lv.skills)}, desc: '${lv.desc}' },`);
+    });
+    lines.push(`    ],`);
+    lines.push(`  },`);
+  }
+  lines.push('};');
+  lines.push("const BASIC_KEYS = ['" + BASIC_KEYS.join("', '") + "'];");
+  lines.push('');
+
+  // TOWERS
+  lines.push('// ============================================================');
+  lines.push('// TOWERS — 元素塔（元素 Lv1 起使用，保留作為元素屬性參考）');
+  lines.push('// ============================================================');
+  lines.push('const TOWERS = {');
+  for (const [elem, tData] of Object.entries(editData.towers)) {
+    lines.push(`  ${elem}: {`);
+    lines.push(`    name: '${tData.name}', icon: '${tData.icon}', elem: '${tData.elem}',`);
+    lines.push(`    levels: [`);
+    tData.levels.forEach((lv) => {
+      if (lv === null) { lines.push('      null,'); return; }
+      lines.push(`      { damage: ${lv.damage}, atkSpd: ${lv.atkSpd}, range: ${lv.range}, aoe: ${lv.aoe}, cost: ${lv.cost}, skills: ${fmtSkills(lv.skills)}, desc: '${lv.desc}' },`);
+    });
+    lines.push(`    ],`);
+    lines.push(`  },`);
+  }
+  lines.push('};');
+  lines.push('');
+
+  // ELEM_BASE
+  lines.push('// ============================================================');
+  lines.push('// ELEM_BASE — Lv3 元素基底塔（單元素，依箭/砲基底區分）');
+  lines.push('// Lv2 基礎塔 + 1 元素 pick → 轉為元素塔');
+  lines.push('// ============================================================');
+  lines.push('const ELEM_BASE = {');
+  for (const elem of ELEM_KEYS) {
+    lines.push(`  ${elem}: {`);
+    for (const base of BASIC_KEYS) {
+      const eb = editData.elemBase[elem][base];
+      const dmgTypePart = eb.dmgType ? `, dmgType: '${eb.dmgType}'` : '';
+      lines.push(`    ${base}:  { name: '${eb.name}', icon: '${eb.icon}', damage: ${eb.damage}, atkSpd: ${eb.atkSpd}, range: ${eb.range}, aoe: ${eb.aoe}, cost: ${eb.cost}${dmgTypePart}, desc: '${eb.desc}',`);
+      lines.push(`      skills: ${fmtSkills(eb.skills)} },`);
+    }
+    lines.push(`  },`);
+  }
+  lines.push('};');
+  lines.push('');
+
+  // INFUSIONS
+  lines.push('// ============================================================');
+  lines.push('// INFUSIONS — Lv4 雙屬塔（6 基底 × 6 注入 = 36 格）');
+  lines.push('// ============================================================');
+  lines.push('const INFUSIONS = {');
+  for (const baseElem of ELEM_KEYS) {
+    lines.push(`  ${baseElem}: {`);
+    for (const injElem of ELEM_KEYS) {
+      const inf = editData.infusions[baseElem]?.[injElem];
+      if (!inf) continue;
+      const lv = inf.lv4;
+      if (!lv) continue;
+      lines.push(`    ${injElem}: { name: '${inf.name}', icon: '${inf.icon}',`);
+      const lv4DmgPart = `, dmgType: '${lv.dmgType || baseElem}'`;
+      const lv4ScoreAdj = lv.score_adj !== undefined ? `, score_adj: ${lv.score_adj}` : '';
+      lines.push(`      lv4: { damage: ${lv.damage}, atkSpd: ${lv.atkSpd}, range: ${lv.range}, aoe: ${lv.aoe}, cost: ${lv.cost}${lv4ScoreAdj}${lv4DmgPart}, desc: '${lv.desc}',`);
+      lines.push(`        skills: ${fmtSkills(lv.skills)} },`);
+      lines.push(`    },`);
+    }
+    lines.push(`  },`);
+  }
+  lines.push('};');
+  lines.push('');
+
+  // TRIPLE_TOWERS
+  lines.push('// ============================================================');
+  lines.push('// TRIPLE_TOWERS — Lv5 三屬塔');
+  lines.push('// ============================================================');
+  lines.push('const TRIPLE_TOWERS = {');
+  for (const [key, triple] of Object.entries(editData.tripleTowers)) {
+    const lv = triple.lv5;
+    if (!lv) continue;
+    lines.push(`  '${key}': { name: '${triple.name}', icon: '${triple.icon}',`);
+    const tripleBaseElem = key.split('_')[0];
+    const lv5DmgPart = `, dmgType: '${lv.dmgType || tripleBaseElem}'`;
+    lines.push(`    lv5: { damage: ${lv.damage}, atkSpd: ${lv.atkSpd}, range: ${lv.range}, aoe: ${lv.aoe}, cost: ${lv.cost}${lv5DmgPart}, desc: '${lv.desc}',`);
+    lines.push(`      skills: ${fmtSkills(lv.skills)} },`);
+    lines.push(`  },`);
+  }
+  lines.push('};');
+  lines.push('');
+
+  // PURE_TOWERS
+  lines.push('// ============================================================');
+  lines.push('// PURE_TOWERS — Lv5 純屬強化 / Lv6 純屬終極（同元素×3 + 精華）');
+  lines.push('// ============================================================');
+  lines.push('const PURE_TOWERS = {');
+  for (const [elem, pure] of Object.entries(editData.pureTowers)) {
+    if (!pure.lv6) continue;
+    lines.push(`  ${elem}: { name: '${pure.name}', icon: '${pure.icon}',`);
+    if (pure.lv5) {
+      const lv5 = pure.lv5;
+      const lv5DmgPart = `, dmgType: '${lv5.dmgType || elem}'`;
+      lines.push(`    lv5: { damage: ${lv5.damage}, atkSpd: ${lv5.atkSpd}, range: ${lv5.range}, aoe: ${lv5.aoe}, cost: ${lv5.cost}${lv5DmgPart}, desc: '${lv5.desc}',`);
+      lines.push(`      skills: ${fmtSkills(lv5.skills)} },`);
+    }
+    const lv6 = pure.lv6;
+    const lv6DmgPart = `, dmgType: '${lv6.dmgType || elem}'`;
+    lines.push(`    lv6: { damage: ${lv6.damage}, atkSpd: ${lv6.atkSpd}, range: ${lv6.range}, aoe: ${lv6.aoe}, cost: ${lv6.cost}${lv6DmgPart}, desc: '${lv6.desc}',`);
+    lines.push(`      skills: ${fmtSkills(lv6.skills)} },`);
+    lines.push(`  },`);
+  }
+  lines.push('};');
+  lines.push('');
+
+  doExport(lines.join('\n'), 'towers.js', mode);
+}
+
+// ============================================================
+// Config 面板
+// ============================================================
+function renderConfigPanel() {
+  const panel = document.getElementById('list-panel');
+  panel.innerHTML = '<div style="color:#666;padding:8px;font-size:11px;">CONFIG 設定無列表，直接在右側編輯</div>';
+
+  const editPanel = document.getElementById('edit-panel');
+  const c = editData.config;
+  let html = '';
+
+  // 基本經濟
+  html += '<div class="section"><h3>💰 基本經濟</h3><div class="field-grid">';
+  const ecoFields = [
+    { key:'startGold', label:'起始金幣' }, { key:'startHP', label:'起始HP' },
+    { key:'baseIncome', label:'基礎收入' }, { key:'towerCost', label:'塔費用(Lv1)' },
+    { key:'killGoldAiSend', label:'AI送兵擊殺金' }, { key:'totalWaves', label:'總波數' },
+  ];
+  for (const f of ecoFields) {
+    html += `<div class="field"><label>${f.label}</label><input type="number" step="any" value="${c[f.key]}" onchange="editData.config.${f.key}=parseFloat(this.value)||0"></div>`;
+  }
+  html += '</div></div>';
+
+  // 地圖
+  html += '<div class="section"><h3>🗺️ 地圖</h3><div class="field-grid">';
+  const mapFields = [
+    { key:'gridCols', label:'格數(橫)' }, { key:'gridRows', label:'格數(縱)' },
+  ];
+  for (const f of mapFields) {
+    html += `<div class="field"><label>${f.label}</label><input type="number" step="any" value="${c[f.key]}" onchange="editData.config.${f.key}=parseFloat(this.value)||0"></div>`;
+  }
+  html += '</div></div>';
+
+  // 難度設定（波次倍率 + AI 整合）
+  html += '<div class="section"><h3>⚔️ 難度設定（波次 + AI）</h3>';
+  const diffFields = [
+    { key:'hpMult', label:'怪物HP倍率' }, { key:'countMult', label:'怪物數量倍率' },
+    { key:'aiHp', label:'AI HP' }, { key:'aiBaseIncome', label:'AI基礎收入' },
+    { key:'aiStartGold', label:'AI起始金' }, { key:'aiTowerCost', label:'AI塔費用' },
+    { key:'aiMaxTowers', label:'AI最大塔數' },
+  ];
+  html += '<table style="border-collapse:collapse;font-size:11px;width:100%;">';
+  html += '<tr><th style="padding:4px;border:1px solid #333;text-align:left;">欄位</th>';
+  for (const [dk, dv] of Object.entries(c.difficulty)) {
+    html += `<th style="padding:4px;border:1px solid #333;">${dv.label}</th>`;
+  }
+  html += '</tr>';
+  for (const f of diffFields) {
+    html += `<tr><td style="padding:4px;border:1px solid #333;color:#aaa;">${f.label}</td>`;
+    for (const dk of Object.keys(c.difficulty)) {
+      const val = c.difficulty[dk][f.key];
+      html += `<td style="padding:2px;border:1px solid #333;"><input type="number" step="any" value="${val}" style="width:70px;background:#0a0a1e;color:#eee;border:none;text-align:center;font-size:11px;" onchange="editData.config.difficulty.${dk}.${f.key}=parseFloat(this.value)||0"></td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</table></div>';
+
+  // 元素克制
+  html += '<div class="section"><h3>🔥 元素克制 (elemAdv)</h3>';
+  html += '<table style="border-collapse:collapse;font-size:11px;">';
+  html += '<tr><th style="padding:4px;border:1px solid #333;">攻↓ 防→</th>';
+  for (const def of ELEM_KEYS) {
+    const e = ELEM[def];
+    html += `<th style="padding:4px;border:1px solid #333;">${e.icon}${e.name}</th>`;
+  }
+  html += '</tr>';
+  for (const atk of ELEM_KEYS) {
+    const ea = ELEM[atk];
+    html += `<tr><th style="padding:4px;border:1px solid #333;">${ea.icon}${ea.name}</th>`;
+    for (const def of ELEM_KEYS) {
+      if (atk === def) {
+        html += '<td style="padding:2px;border:1px solid #333;text-align:center;color:#666;">—</td>';
+      } else {
+        const val = (c.elemAdv[atk] && c.elemAdv[atk][def]) || 1.0;
+        const bg = val > 1 ? '#1a3a1a' : val < 1 ? '#3a1a1a' : '#1a1a3e';
+        html += `<td style="padding:2px;border:1px solid #333;background:${bg};"><input type="number" step="0.05" value="${val}" style="width:50px;background:transparent;color:#eee;border:none;text-align:center;font-size:11px;" onchange="setElemAdv('${atk}','${def}',this.value)"></td>`;
+      }
+    }
+    html += '</tr>';
+  }
+  html += '</table></div>';
+
+  editPanel.innerHTML = html;
+}
+
+function setElemAdv(atk, def, val) {
+  const v = parseFloat(val) || 1.0;
+  if (!editData.config.elemAdv[atk]) editData.config.elemAdv[atk] = {};
+  if (v === 1.0) {
+    delete editData.config.elemAdv[atk][def];
+    if (Object.keys(editData.config.elemAdv[atk]).length === 0) delete editData.config.elemAdv[atk];
+  } else {
+    editData.config.elemAdv[atk][def] = v;
+  }
+}
+
+// ============================================================
+// 匯出 skills.js
+// ============================================================
+function exportSkills(mode) {
+  let lines = [];
+  lines.push('// ============================================================');
+  lines.push('// SKILL SYSTEM — 模組化技能定義');
+  lines.push('// ============================================================');
+  lines.push('');
+
+  // GLOBAL_CAPS
+  const capComments = {
+    slowPct:         '// 減速上限 75%',
+    atkSpdBonus:     '// 攻速加成上限 +100%',
+    shredPerStack:   '// 每層 -2% 護甲穿透',
+    shredMaxStacks:  '// 上限 37 層 = 74%',
+    shredDecayRate:  '// 每秒 -1.5 層',
+    vulnPerStack:    '// 每層 +2% 易傷',
+    vulnMaxStacks:   '// 上限 37 層',
+    vulnDecayRate:   '// 每秒 -1.5 層',
+    procMinInterval: '// proc 最小間隔 0.3 秒',
+    hpPctCd:         '// %HP 傷害每目標冷卻 0.5 秒',
+  };
+  lines.push('// 全域上限');
+  lines.push('const GLOBAL_CAPS = {');
+  for (const [key, val] of Object.entries(editData.globalCaps)) {
+    const comment = capComments[key] ? `  ${capComments[key]}` : '';
+    lines.push(`  ${key}: ${val},${comment}`);
+  }
+  lines.push('};');
+  lines.push('');
+
+  // SKILL_DEFS
+  lines.push('// ============================================================');
+  lines.push('// SKILL_DEFS — 所有技能的 master 登錄表');
+  lines.push('// ============================================================');
+  lines.push('const SKILL_DEFS = {');
+  const GROUP_ORDER = ['damage', 'control', 'debuff', 'buff', 'special'];
+  const CAT_COMMENTS = {
+    damage:  '// ── 塔：傷害類 ──',
+    control: '// ── 塔：控制類 ──',
+    debuff:  '// ── 塔：弱化類 ──',
+    buff:    '// ── 塔：增益類 ──',
+    special: '// ── 塔：特殊類 ──',
+  };
+  let lastGroup = null;
+  for (const group of GROUP_ORDER) {
+    for (const [type, def] of Object.entries(SKILL_DEFS)) {
+      if (def.category !== 'tower' || def.group !== group) continue;
+      if (def.group !== lastGroup) {
+        lines.push('');
+        lines.push(`  ${CAT_COMMENTS[group] || ''}`);
+        lastGroup = def.group;
+      }
+      const defaultsStr = JSON.stringify(def.defaults).replace(/"(\w+)":/g, '$1:');
+      const spRef = def.scorePrimary === null ? 'null' : `'${def.scorePrimary}'`;
+      const sfStr = (def.scoreFactors && def.scoreFactors.length > 0)
+        ? `, scoreFactors: ${JSON.stringify(def.scoreFactors)}`
+        : '';
+      lines.push(`  ${type.padEnd(12)}: { category: '${def.category}', group: '${def.group}', name: '${def.name}', defaults: ${defaultsStr}, desc: '${def.desc}', scoreBase: ${def.scoreBase}, scorePrimary: ${spRef}, scoreRef: ${def.scoreRef === null ? 'null' : def.scoreRef}${sfStr} },`);
+    }
+  }
+  lines.push('');
+  lines.push('  // ── 敵人/送兵技能 ──');
+  for (const [type, def] of Object.entries(SKILL_DEFS)) {
+    if (def.category !== 'enemy') continue;
+    const defaultsStr = JSON.stringify(def.defaults).replace(/"(\w+)":/g, '$1:');
+    const spRef = def.scorePrimary === null ? 'null' : `'${def.scorePrimary}'`;
+    const sfStr = (def.scoreFactors && def.scoreFactors.length > 0)
+      ? `, scoreFactors: ${JSON.stringify(def.scoreFactors)}`
+      : '';
+    lines.push(`  ${type.padEnd(12)}: { category: '${def.category}', group: '${def.group}', name: '${def.name}', defaults: ${defaultsStr}, desc: '${def.desc}', scoreBase: ${def.scoreBase}, scorePrimary: ${spRef}, scoreRef: ${def.scoreRef === null ? 'null' : def.scoreRef}${sfStr} },`);
+  }
+  lines.push('};');
+  lines.push('');
+  lines.push('// （以下為工具函數，不由 skill-editor 產生）');
+
+  doExport(lines.join('\n'), 'skills.js', mode);
+}
+
+// ============================================================
+// 匯出 config.js
+// ============================================================
+function exportConfig(mode) {
+  const c = editData.config;
+  let lines = [];
+  lines.push('// ============================================================');
+  lines.push('// CONFIG — 所有可調數值集中於此');
+  lines.push('// ============================================================');
+  lines.push('const CONFIG = {');
+  lines.push(`  startGold: ${c.startGold},`);
+  lines.push(`  startHP: ${c.startHP},`);
+  lines.push(`  baseIncome: ${c.baseIncome},`);
+  lines.push(`  towerCost: ${c.towerCost},       // Lv1 塔放置費用（統一）`);
+  lines.push('');
+  lines.push('  // 擊殺獎勵');
+  lines.push('  // killGold 改為每隻怪獨立定義在 WAVES 中（killGold 欄位）');
+  lines.push(`  killGoldAiSend: ${c.killGoldAiSend},   // AI 送兵擊殺金（固定，不成長）`);
+  lines.push('');
+  lines.push('  // 難度設定（波次倍率 + AI 數值整合）');
+  lines.push('  difficulty: {');
+  for (const [dk, dv] of Object.entries(c.difficulty)) {
+    const parts = [];
+    parts.push(`label: '${dv.label}'`);
+    parts.push(`hpMult: ${dv.hpMult}`);
+    parts.push(`countMult: ${dv.countMult}`);
+    parts.push(`aiHp: ${dv.aiHp}`);
+    parts.push(`aiBaseIncome: ${dv.aiBaseIncome}`);
+    parts.push(`aiStartGold: ${dv.aiStartGold}`);
+    parts.push(`aiTowerCost: ${dv.aiTowerCost}`);
+    parts.push(`aiMaxTowers: ${dv.aiMaxTowers}`);
+    lines.push(`    ${dk}: { ${parts.join(', ')} },`);
+  }
+  lines.push('  },');
+  lines.push('');
+  lines.push('  // 元素相剋');
+  lines.push('  elemAdv: {');
+  for (const [atk, advs] of Object.entries(c.elemAdv)) {
+    const parts = Object.entries(advs).map(([d,v]) => `${d}: ${v}`);
+    lines.push(`    ${atk}:  { ${parts.join(', ')} },`);
+  }
+  lines.push('  },');
+  lines.push('');
+  lines.push(`  gridCols: ${c.gridCols},`);
+  lines.push(`  gridRows: ${c.gridRows},`);
+  lines.push(`  totalWaves: ${c.totalWaves},`);
+  lines.push('};');
+  lines.push('');
+  doExport(lines.join('\n'), 'config.js', mode);
+}
+
+// ============================================================
+init();
+
+function showScoreHelp() {
+  document.getElementById('score-help-overlay').classList.add('open');
+}
+function closeScoreHelp() {
+  document.getElementById('score-help-overlay').classList.remove('open');
+}
+</script>
+
+<!-- 評分系統說明 Modal -->
+<div id="score-help-overlay" onclick="if(event.target===this)closeScoreHelp()">
+  <div id="score-help-box">
+    <button id="score-help-close" onclick="closeScoreHelp()">✕</button>
+    <h2>📊 評分系統說明</h2>
+
+    <h3>Overview</h3>
+    <p>每座塔的「平衡度」由兩部分加總對比目標分：</p>
+    <p><code>balance% = (effectiveDPS score + skillTotal) / target × 100</code></p>
+    <ul style="margin:6px 0 0 16px;padding:0">
+      <li><b>effectiveDPS score</b>：DPS（damage × atkSpd）× AOE 乘數 × 射程係數，作為 DPS 分</li>
+      <li><b>skillTotal</b>：各技能依自身參數計算後加總</li>
+      <li><b>target</b>：LEVEL_SCORE_STD[lv] × score_adj（塔個別係數）</li>
+    </ul>
+
+    <h3>📏 射程係數（rangeFactor）</h3>
+    <p><code>rangeFactor = 1.0 + (range - 4) × RANGE_FACTOR_K</code></p>
+    <p>設計射程區間為 3～5，以 range=4 為基準（×1.0）。超出區間的塔仍可套用公式，但應透過建造難度控制平衡，不依賴評分系統。</p>
+    <table>
+      <tr><th>range</th><th>rangeFactor（K=0.2）</th></tr>
+      <tr><td>3</td><td>0.8×</td></tr>
+      <tr><td>4</td><td>1.0×</td></tr>
+      <tr><td>5</td><td>1.2×</td></tr>
+    </table>
+    <p><code>RANGE_FACTOR_K</code> 可在 ⚙️ 面板調整。</p>
+
+    <h3>Skill Score Formula</h3>
+    <p><code>分 = scoreBase × (實際值 / scoreRef) × weight × conditionalFactor × atkSpdMult</code></p>
+    <table>
+      <tr><th>param</th><th>description</th></tr>
+      <tr><td><code>scoreBase</code></td><td>技能滿基準參數時的分數上限（⚙️ 面板可調）</td></tr>
+      <tr><td><code>scorePrimary / scoreRef</code></td><td>主要計分參數及其基準值；實際值高於基準則超過 scoreBase</td></tr>
+      <tr><td><code>weight</code></td><td>技能列個別權重（預設 1.0，可在技能行直接調整）</td></tr>
+    </table>
+
+    <h3>⚡ conditionalFactor</h3>
+    <p>用於<b>需要前置條件才能觸發</b>的技能，折扣代表「條件達成率」的假設值。</p>
+    <table>
+      <tr><th>skill</th><th>default</th><th>value / meaning</th></tr>
+      <tr><td>引燃</td><td>0.75</td><td>目標身上有灼燒的時間比例（burn uptime）。灼燒持續 3 秒，偶有換目標或漏攻，故非 1.0</td></tr>
+      <tr><td>引爆</td><td>0.50</td><td>攻擊時灼燒層數 ≥3 的機率。引爆消耗層數後需重新疊，快攻塔可調高此值</td></tr>
+    </table>
+    <p>若前置技能（灼燒）未啟用，conditionalFactor 自動歸零，技能分 = 0（顯示 ⚠️ 缺前置）。</p>
+    <div class="tip">調整建議：快攻火系塔（atkSpd ≥ 2.0）可將引燃調至 0.9、引爆調至 0.65；慢攻狙擊型可降至 0.5 / 0.3。</div>
+
+    <h3>🏃 atkSpdSensitive</h3>
+    <p>適用於「每次攻擊觸發一次」的技能（冰緩、碎甲、易傷、引燃、引爆）。</p>
+    <p><code>atkSpdMult = 塔的 atkSpd / ATKSPD_REF[lv]</code></p>
+    <table>
+      <tr><th>level</th><th>ATKSPD_REF</th><th>description</th></tr>
+      <tr><td>lv3–lv5</td><td>1.2</td><td>基準攻速（×1.0），高於此值得分線性提升</td></tr>
+      <tr><td>lv6</td><td>1.5</td><td>純屬塔基準較高</td></tr>
+    </table>
+    <p>攻速 2.4 的塔得 ×2.0，攻速 0.6 的塔得 ×0.5，反映實際每秒觸發次數差異。</p>
+
+    <h3>score_adj</h3>
+    <p>調整單座塔的目標分高低。<code>autoTarget = LEVEL_SCORE_STD[lv] × score_adj</code></p>
+    <p>預設 1.0；純輸出塔可設 1.2（允許超標）；輔助型塔可設 0.8（降低期望）。</p>
+
+    <h3>balance% reference</h3>
+    <table>
+      <tr><th>value</th><th>value / meaning</th></tr>
+      <tr><td>&lt; 80%</td><td style="color:#f88">偏弱，技能組與 DPS 合計明顯低於目標</td></tr>
+      <tr><td>80–110%</td><td style="color:#4c4">正常平衡範圍</td></tr>
+      <tr><td>110–130%</td><td style="color:#fa8">略強，可接受但建議觀察</td></tr>
+      <tr><td>&gt; 130%</td><td style="color:#f44">過強，考慮降低 scoreBase 或調整塔的 damage/atkSpd</td></tr>
+    </table>
+  </div>
+</div>
+
+</body>
+</html>

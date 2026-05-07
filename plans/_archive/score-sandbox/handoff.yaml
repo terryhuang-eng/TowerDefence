@@ -1,0 +1,68 @@
+handoff:
+  date: "2026-05-04"
+  project: tower-defense-prototype
+  plan: score-sandbox
+  resume_trigger: "繼續塔防"
+
+status: COMPLETED
+
+summary: |
+  score-sandbox plan 全部 4 步驟完成。
+  dps-calc.html 加入評分權重面板 + score_adj inline 編輯 + ADJ_PATCH 匯出。
+  index.html 加入 ?sandbox=1 沙盒面板（DOM + 功能全接線）。
+  game.js 加入 3 個 sandbox hook（hp倍率/count倍率/infHP守衛）。
+
+completed_steps:
+  - id: step1
+    file: dps-calc.html
+    changes:
+      - SCORE_WEIGHT_DEFAULTS (26 個係數)
+      - scoreWeights 工作副本
+      - calcTowerScore() 全改讀 W.xxx
+      - 4 欄評分權重面板 UI（<details> 折疊）
+
+  - id: step2
+    file: dps-calc.html
+    changes:
+      - overrideAdj state 物件
+      - adj-badge inline 編輯（灰/橙色，blur/Enter 確認）
+      - 📋 匯出 adj 差異按鈕（ADJ_PATCH JS 物件 → 剪貼簿）
+      - ↺ 重置 adj 按鈕
+      - adjStatus + showToast()
+
+  - id: step3
+    file: index.html
+    changes:
+      - IIFE script（?sandbox=1 才 inject）
+      - #sandboxPanel 浮動面板（波次跳躍/倍率滑桿/金幣/元素/infHP/速度）
+      - CSS .sb-section / .sb-label / .sb-btn / .active-speed
+      - 滑桿即時數值顯示
+
+  - id: step4
+    files: [index.html, js/game.js]
+    changes:
+      - window.SANDBOX 全域狀態 { active, hpMult, countMult, infHP }
+      - 全按鈕接線（sbGame() → window._game）
+      - 波次跳躍：清場 + wave=target-1 + state=pre_wave + rebuild
+      - 元素解鎖：+1 pick（上限4），全解鎖=4
+      - 無限血量：SANDBOX.infHP toggle
+      - 遊戲速度：_game.gameSpeed = spd
+      - game.js hook 1：startWave() sbHp/sbCount 乘入 mkEnemy + effCount
+      - game.js hook 2：到達終點扣血加 !window.SANDBOX?.infHP 守衛
+
+next_steps:
+  - action: 瀏覽器測試 index.html?sandbox=1，確認各功能正常
+  - action: 若有 bug 再修，否則下一個 plan 待定
+
+key_files:
+  - dps-calc.html           # 評分工具（權重面板 + adj 編輯）
+  - index.html              # 主遊戲（沙盒面板）
+  - js/game.js              # 遊戲邏輯（sandbox hook）
+  - js/towers.js            # 塔定義（score_adj）
+  - plans/active/score-sandbox/  # 本 plan 文件
+
+context:
+  score_adj_goal: "effective_score = 410 ±15%（348~472）"
+  sandbox_entry: "index.html?sandbox=1"
+  game_instance: "window._game"
+  elem_picks_var: "this.elemPicks（object, key=elem, value=count）"

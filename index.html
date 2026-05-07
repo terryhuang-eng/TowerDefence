@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>塔防原型 v6.0</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+
+#game-container { display: flex; height: 100vh; }
+#sidebar { width: 340px; background: #16213e; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+#canvas-wrap { flex: 1; position: relative; }
+canvas { display: block; touch-action: manipulation; }
+
+.panel { background: #0f3460; border-radius: 8px; padding: 8px 10px; }
+.panel h3 { font-size: 12px; color: #e94560; margin-bottom: 4px; }
+
+/* 升級面板 */
+#upgrade-panel { display: none; }
+.upgrade-opt {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 8px; border: 1px solid #555; border-radius: 4px;
+  background: #1a1a3e; cursor: pointer; font-size: 11px; margin: 2px;
+  transition: all 0.15s;
+}
+.upgrade-opt:hover { border-color: #e94560; background: #2a1a3e; }
+
+/* Income 按鈕 */
+.income-btn {
+  padding: 6px 12px; margin: 3px; border: 1px solid #555; border-radius: 4px;
+  background: #1a1a3e; color: #ddd; cursor: pointer; font-size: 12px;
+}
+.income-btn:hover { background: #e94560; }
+
+/* 波次預覽 */
+.wave-preview { background: #1a1a3e; border-radius: 6px; padding: 8px; margin-top: 4px; }
+.wave-preview .label { color: #e94560; font-weight: bold; font-size: 11px; }
+.wave-preview .detail { color: #aaa; font-size: 11px; margin-top: 2px; line-height: 1.5; }
+.passive-tag {
+  display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px;
+  background: #2a2a5e; margin: 1px;
+}
+.resist-tag {
+  display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px;
+  margin: 1px;
+}
+.weak-tag {
+  display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px;
+  margin: 1px; border: 1px dashed;
+}
+
+/* 敵人 Tooltip */
+#enemy-tooltip {
+  display: none; position: absolute; z-index: 100;
+  background: #16213eee; border: 1px solid #e94560; border-radius: 8px;
+  padding: 8px 10px; font-size: 11px; color: #eee;
+  pointer-events: none; min-width: 160px; max-width: 220px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+#enemy-tooltip .tt-name { font-weight: bold; color: #e94560; font-size: 12px; margin-bottom: 4px; }
+#enemy-tooltip .tt-row { margin: 2px 0; color: #ccc; }
+#enemy-tooltip .tt-row span { color: #fff; }
+
+/* Info bar */
+#info-bar {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between; padding: 8px 16px;
+  background: rgba(15,52,96,0.9); font-size: 13px; z-index: 10;
+}
+#info-bar span { font-weight: bold; }
+
+/* 塔資訊 tooltip */
+#tower-tooltip {
+  display: none; position: absolute; background: rgba(15,52,96,0.95);
+  border: 1px solid #e94560; border-radius: 6px; padding: 8px 12px;
+  font-size: 11px; z-index: 25; max-width: 240px; pointer-events: none;
+  line-height: 1.5;
+}
+
+/* Wave announce */
+#wave-announce {
+  position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 28px; font-weight: bold; color: #e94560; z-index: 15;
+  text-shadow: 0 0 20px rgba(233,69,96,0.8); opacity: 0; transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+/* Overlays */
+.overlay {
+  display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.75); z-index: 20;
+  justify-content: center; align-items: center; flex-direction: column;
+}
+.overlay h1 { font-size: 32px; margin-bottom: 12px; }
+.overlay button {
+  padding: 10px 24px; font-size: 16px; border: none; border-radius: 6px;
+  background: #e94560; color: white; cursor: pointer;
+}
+.overlay p { color: #aaa; margin-bottom: 12px; font-size: 13px; }
+
+#info-content table { color: #ddd; }
+#info-content th { text-align: left; padding: 2px 6px; }
+#info-content td { padding: 2px 6px; }
+#info-content h3 { border-bottom: 1px solid #444; padding-bottom: 4px; }
+
+/* Start screen */
+#start-screen { display: flex; z-index: 30; }
+#start-screen h1 { font-size: 26px; color: #e94560; margin-bottom: 6px; }
+.team-select { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 12px; }
+.char-pick {
+  width: 140px; padding: 10px; border: 2px solid #333; border-radius: 8px;
+  background: #1a1a3e; cursor: pointer; text-align: center; transition: all 0.15s;
+}
+.char-pick:hover { border-color: #e94560; }
+.char-pick.picked { border-color: #e94560; background: #2a1a3e; box-shadow: 0 0 10px #e94560; }
+.char-pick .icon { font-size: 32px; }
+.char-pick .cname { font-size: 13px; font-weight: bold; margin-top: 4px; }
+.char-pick .celem { font-size: 10px; color: #aaa; }
+.start-btn {
+  padding: 10px 28px; font-size: 16px; border: none; border-radius: 6px;
+  background: #e94560; color: white; cursor: pointer; margin-top: 6px;
+}
+.start-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* Reward / Element selection overlay */
+#reward-overlay {
+  display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.80); z-index: 22;
+  justify-content: center; align-items: center; flex-direction: column;
+}
+#reward-overlay h2 { font-size: 24px; color: #e94560; margin-bottom: 16px; }
+.reward-cards { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+.reward-card {
+  width: 200px; padding: 16px; border: 2px solid #555; border-radius: 12px;
+  background: #16213e; cursor: pointer; text-align: center; transition: all 0.2s;
+}
+.reward-card:hover { border-color: #e94560; background: #1a2a4e; transform: translateY(-4px); box-shadow: 0 4px 20px rgba(233,69,96,0.3); }
+.reward-card .reward-icon { font-size: 36px; margin-bottom: 8px; }
+.reward-card .reward-name { font-size: 14px; font-weight: bold; margin-bottom: 6px; }
+.reward-card .reward-desc { font-size: 11px; color: #aaa; line-height: 1.4; }
+
+/* Send buttons (LTW income) */
+.send-btn {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 4px 8px; margin: 2px 0; border: 1px solid #555; border-radius: 4px;
+  background: #1a1a3e; color: #ddd; cursor: pointer; font-size: 11px;
+  transition: all 0.15s; text-align: left;
+}
+.send-btn:hover:not(:disabled) { border-color: #e94560; background: #2a1a3e; }
+.send-btn:disabled { opacity: 0.35; cursor: default; }
+.send-btn .send-icon { font-size: 16px; flex-shrink: 0; }
+.send-btn .send-info { flex: 1; line-height: 1.3; }
+.send-btn .send-name { font-weight: bold; }
+.send-btn .send-detail { font-size: 10px; color: #aaa; }
+.send-queue-tag {
+  display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 8px; font-size: 10px;
+  background: #2a2a5e; margin: 1px; color: #ffd93d;
+}
+.send-cancel-btn {
+  display: inline-block; width: 14px; height: 14px; line-height: 14px; text-align: center;
+  border-radius: 50%; background: #c44; color: #fff; font-size: 9px; cursor: pointer;
+  border: none; padding: 0; margin-left: 2px;
+}
+.send-cancel-btn:hover { background: #e94560; }
+
+/* Tower type selector popup */
+.tower-select-popup {
+  position: absolute; z-index: 18; background: rgba(15,52,96,0.95);
+  border: 2px solid #e94560; border-radius: 8px; padding: 8px;
+  display: flex; gap: 6px;
+}
+.tower-select-btn {
+  padding: 8px 12px; border: 1px solid #555; border-radius: 6px;
+  background: #1a1a3e; color: #ddd; cursor: pointer; font-size: 13px;
+  text-align: center; transition: all 0.15s; min-width: 60px;
+}
+.tower-select-btn:hover { border-color: #e94560; background: #2a1a3e; }
+
+/* AI opponent panel */
+#ai-bar {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  display: flex; justify-content: center; align-items: center; gap: 16px;
+  padding: 6px 16px; background: rgba(96,15,15,0.9); font-size: 12px; z-index: 10;
+}
+#ai-bar .ai-hp-bar {
+  width: 200px; height: 14px; background: #333; border-radius: 7px; overflow: hidden;
+  position: relative;
+}
+#ai-bar .ai-hp-fill {
+  height: 100%; background: linear-gradient(90deg, #c44, #e94560); transition: width 0.3s;
+}
+#ai-bar .ai-hp-text {
+  position: absolute; top: 0; left: 0; right: 0; text-align: center;
+  font-size: 10px; line-height: 14px; color: #fff; font-weight: bold;
+}
+.ai-dmg-float {
+  position: absolute; color: #ff4444; font-weight: bold; font-size: 16px;
+  pointer-events: none; z-index: 15; animation: floatUp 1s ease-out forwards;
+}
+@keyframes floatUp {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-40px); }
+}
+@keyframes readyPulse {
+  0%, 100% { box-shadow: 0 0 4px #4ecdc4; }
+  50% { box-shadow: 0 0 16px #4ecdc4, 0 0 24px #4ecdc488; }
+}
+
+/* Battle log */
+#battle-log {
+  max-height: 100px; overflow-y: auto; font-size: 10px; line-height: 1.5;
+  scrollbar-width: thin;
+}
+#battle-log .log-player { color: #4ecdc4; }
+#battle-log .log-ai { color: #e94560; }
+#battle-log .log-dmg { color: #ffd93d; font-weight: bold; }
+#battle-log .log-blocked { color: #666; }
+
+/* 元素標籤 */
+.elem-tag {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 10px; margin: 2px; border: 1px solid;
+}
+
+/* 手機 sidebar 漢堡按鈕 */
+#sidebar-toggle {
+  display: none; padding: 2px 8px; border: 1px solid #555; border-radius: 4px;
+  background: #1a1a3e; color: #ffd93d; cursor: pointer; font-size: 14px;
+}
+#sidebar-backdrop { display: none; }
+
+/* ═══ RWD ═══ */
+
+/* 平板 */
+@media (max-width: 1024px) {
+  #sidebar { width: 280px; padding: 8px; font-size: 11px; }
+  #sidebar .panel { padding: 6px 8px; }
+  #ai-bar .ai-hp-bar { width: 140px; }
+}
+
+/* 手機 */
+@media (max-width: 768px) {
+  #game-container { flex-direction: column; }
+
+  #sidebar {
+    position: fixed; top: 0; right: -100%; width: 85vw; max-width: 340px;
+    height: 100vh; z-index: 50; transition: right 0.3s ease;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.6);
+  }
+  #sidebar.open { right: 0; }
+  #sidebar-toggle { display: inline-block; }
+
+  /* sidebar 背景遮罩 */
+  #sidebar-backdrop {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5); z-index: 49;
+  }
+  #sidebar-backdrop.show { display: block; }
+
+  #canvas-wrap { flex: 1; width: 100%; height: 100vh; }
+
+  /* info-bar 自動換行 */
+  #info-bar {
+    flex-wrap: wrap; gap: 4px 10px; padding: 4px 8px; font-size: 11px;
+  }
+
+  /* ai-bar 精簡 */
+  #ai-bar { padding: 4px 8px; font-size: 11px; flex-wrap: wrap; gap: 4px; }
+  #ai-bar .ai-hp-bar { width: 100px; height: 12px; }
+  #ai-bar .ai-hp-text { font-size: 9px; line-height: 12px; }
+
+  /* overlay 調整 */
+  .overlay h1 { font-size: 22px; }
+  .overlay button { padding: 8px 18px; font-size: 14px; }
+  .overlay p { font-size: 12px; }
+  #reward-overlay h2 { font-size: 18px; }
+  .reward-card { width: 140px; padding: 10px; }
+  .reward-card .reward-icon { font-size: 28px; }
+  .reward-card .reward-name { font-size: 12px; }
+
+  /* 波次公告縮小 */
+  #wave-announce { font-size: 20px; }
+
+  /* start screen */
+  #start-screen h1 { font-size: 20px; }
+  .char-pick { width: 110px; padding: 8px; }
+  .start-btn { padding: 8px 20px; font-size: 14px; }
+
+  /* tower select popup */
+  .tower-select-popup { font-size: 11px; }
+  .tower-select-btn { padding: 6px 8px; font-size: 12px; min-width: 50px; }
+
+  /* info overlay 全螢幕 */
+  #info-overlay .overlay-inner,
+  #info-content { max-height: 80vh; overflow-y: auto; }
+}
+
+/* 極小螢幕（<480px） */
+@media (max-width: 480px) {
+  #info-bar { font-size: 10px; padding: 3px 6px; gap: 3px 6px; }
+  #ai-bar { font-size: 10px; }
+  #ai-bar .ai-hp-bar { width: 80px; height: 10px; }
+  .reward-card { width: 120px; padding: 8px; }
+  #start-screen h1 { font-size: 18px; }
+  #pvp-options { font-size: 11px; }
+  #pvp-options input { width: 90px !important; font-size: 11px !important; }
+  .income-btn { padding: 4px 8px; font-size: 11px; }
+}
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <div id="sidebar">
+    <div class="panel">
+      <h3 id="class-title">🏰 元素</h3>
+      <div id="team-chars"></div>
+    </div>
+    <div class="panel">
+      <h3>🔓 元素持有</h3>
+      <div id="unlocked-elems"></div>
+    </div>
+    <div class="panel" id="upgrade-panel">
+      <h3>⬆️ 塔升級</h3>
+      <div id="upgrade-info"></div>
+      <div id="upgrade-options"></div>
+    </div>
+    <div class="panel">
+      <h3>⚔️ 送兵攻擊 AI（LTW）</h3>
+      <div id="income-section"></div>
+    </div>
+    <div class="panel" id="pvp-status-panel" style="display:none;">
+      <h3>👥 玩家狀態</h3>
+      <div id="pvp-players-info" style="font-size:10px;line-height:1.6;"></div>
+    </div>
+    <div class="panel">
+      <h3>📜 戰報</h3>
+      <div id="battle-log"></div>
+    </div>
+    <div class="panel">
+      <h3>🌊 波次</h3>
+      <div id="wave-info"></div>
+    </div>
+    <div class="panel">
+      <h3>📋 操作</h3>
+      <div style="font-size:11px; color:#aaa; line-height:1.5;">
+        點地圖空格放塔（💰50）<br>
+        點塔 → 升級（Lv1→2 基礎 / Lv2→3 選元素 / Lv3→4 注入 / Lv4→5 純元素）<br>
+        W3/W6/W9/W12 過關選元素（共4次）<br>
+        送兵攻擊對手：+income 且對對手造成傷害<br>
+        勝利：打爆對手 HP 或撐過全部波次
+      </div>
+    </div>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="game-canvas"></canvas>
+    <div id="enemy-tooltip"></div>
+    <div id="info-bar">
+      <div>❤️ <span id="hp-val">20</span>/<span id="hp-max">20</span></div>
+      <div>💰 <span id="gold-val">150</span></div>
+      <div>📈 +<span id="income-val">20</span>/波</div>
+      <div>🌊 <span id="wave-val">0</span>/<span id="wave-total">20</span></div>
+      <div>⏱️ <span id="time-val">0:00</span></div>
+      <div><button id="speed-btn" style="padding:2px 8px;border:1px solid #555;border-radius:4px;background:#1a1a3e;color:#ddd;cursor:pointer;font-size:12px;">▶ ×1</button></div>
+      <div><button id="ai-hp-btn" style="padding:2px 8px;border:1px solid #555;border-radius:4px;background:#1a1a3e;color:#e94560;cursor:pointer;font-size:12px;">🤖 AI +1 HP</button></div>
+      <div><button id="pvp-ready-topbar" style="display:none;padding:4px 14px;border:2px solid #4ecdc4;border-radius:6px;background:#1a3a3e;color:#4ecdc4;cursor:pointer;font-size:13px;font-weight:bold;animation:readyPulse 1.5s infinite;">✓ 準備</button></div>
+      <div><button id="info-btn" style="padding:2px 8px;border:1px solid #555;border-radius:4px;background:#1a1a3e;color:#ffd93d;cursor:pointer;font-size:12px;">📖 說明</button></div>
+      <div><button id="sidebar-toggle">☰ 面板</button></div>
+    </div>
+    <div id="sidebar-backdrop"></div>
+    <div id="ai-bar">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span>🤖 AI <span id="ai-char-name"></span></span>
+        <div>❤️ <div class="ai-hp-bar" style="display:inline-block;vertical-align:middle;">
+          <div class="ai-hp-fill" id="ai-hp-fill" style="width:100%"></div>
+          <div class="ai-hp-text" id="ai-hp-text">100/100</div>
+        </div></div>
+        <span>🏗️ 塔×<span id="ai-tower-val">0</span></span>
+        <span>💰 <span id="ai-gold-val">150</span></span>
+        <span>📈 +<span id="ai-income-val">20</span>/波</span>
+      </div>
+      <div id="ai-tower-detail" style="color:#aaa;font-size:10px;margin-top:2px;"></div>
+      <div id="ai-action-info" style="color:#ffd93d;font-size:10px;margin-top:2px;"></div>
+    </div>
+    <div id="wave-announce"></div>
+    <div id="tower-tooltip"></div>
+    <div class="overlay" id="autotest-overlay" style="display:none;align-items:flex-start;justify-content:center;overflow-y:auto;z-index:50;">
+      <div style="background:#1a1a2e;border:1px solid #ffd93d;border-radius:8px;padding:16px;margin:20px auto;max-width:850px;width:95%;max-height:90vh;overflow-y:auto;">
+        <h2 style="color:#ffd93d;margin:0 0 8px;">🤖 自動測試報告</h2>
+        <div id="autotest-status" style="color:#aaa;font-size:12px;margin-bottom:8px;">準備中...</div>
+        <div id="autotest-results" style="font-size:12px;line-height:1.6;"></div>
+        <button onclick="document.getElementById('autotest-overlay').style.display='none';document.getElementById('start-screen').style.display='flex';" style="margin-top:12px;padding:6px 16px;border:1px solid #555;border-radius:4px;background:#2a1a3e;color:#eee;cursor:pointer;">關閉</button>
+      </div>
+    </div>
+    <div class="overlay" id="game-over-overlay">
+      <h1 id="go-title"></h1>
+      <p id="go-detail"></p>
+      <button onclick="location.reload()">再來一局</button>
+    </div>
+    <div id="reward-overlay">
+      <h2>🔮 選擇元素</h2>
+      <div class="reward-cards" id="reward-cards"></div>
+    </div>
+    <div class="overlay" id="info-overlay" style="display:none;align-items:flex-start;justify-content:center;overflow-y:auto;">
+      <div style="background:#1a1a2e;border:1px solid #555;border-radius:8px;padding:16px;margin:20px auto;max-width:800px;width:95%;max-height:85vh;overflow-y:auto;">
+        <div style="text-align:right;position:sticky;top:0;z-index:1;"><button onclick="document.getElementById('info-overlay').style.display='none'" style="background:#e94560;border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:14px;">✕ 關閉</button></div>
+        <div id="info-content" style="text-align:left;font-size:12px;line-height:1.6;"></div>
+      </div>
+    </div>
+    <div class="overlay" id="skill-ref-overlay" style="display:none;align-items:flex-start;justify-content:center;overflow-y:auto;">
+      <div style="background:#1a1a2e;border:1px solid #555;border-radius:8px;padding:16px;margin:20px auto;max-width:860px;width:95%;max-height:90vh;overflow-y:auto;">
+        <div style="text-align:right;position:sticky;top:0;z-index:1;background:#1a1a2e;padding-bottom:4px;">
+          <button onclick="document.getElementById('skill-ref-overlay').style.display='none'" style="background:#e94560;border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:14px;">✕ 關閉</button>
+        </div>
+        <div id="skill-ref-content" style="text-align:left;font-size:12px;line-height:1.7;"></div>
+      </div>
+    </div>
+    <div class="overlay" id="start-screen">
+      <h1>🏰 塔防原型 v6.0</h1>
+      <p>基礎塔開局，W3/W6/W9/W12 通關後選擇元素（共4次）</p>
+      <!-- 模式選擇 -->
+      <div id="mode-select" style="margin-bottom:8px;">
+        <button class="income-btn mode-btn" data-mode="pve" style="border:2px solid #e94560;background:#2a1a3e;">🤖 PVE（vs AI）</button>
+        <button class="income-btn mode-btn" data-mode="pvp" style="border:2px solid #555;">⚔️ PVP（vs 玩家）</button>
+      </div>
+      <!-- PVE: 難度選擇 -->
+      <div id="pve-options" style="margin-bottom:8px;">
+        <span style="font-size:12px; color:#aaa;">難度：</span>
+        <button class="income-btn diff-btn" data-diff="x1" style="border:2px solid #e94560;background:#2a1a3e;">×1 普通</button>
+        <button class="income-btn diff-btn" data-diff="x2" style="border:2px solid #555;">×2 困難</button>
+        <button class="income-btn diff-btn" data-diff="x3" style="border:2px solid #555;">×3 地獄</button>
+      </div>
+      <!-- PVP: 房間系統（支持 N 人環形） -->
+      <div id="pvp-options" style="display:none;margin-bottom:8px;">
+        <div style="margin-bottom:6px;">
+          <span style="font-size:12px;color:#aaa;">你的ID：</span>
+          <input id="pvp-name-input" type="text" placeholder="輸入暱稱" maxlength="10" style="padding:4px 8px;border:1px solid #555;border-radius:4px;background:#1a1a3e;color:#4ecdc4;font-size:13px;width:100px;margin-right:8px;">
+        </div>
+        <div style="margin-bottom:6px;">
+          <button class="income-btn" id="pvp-create" style="border:2px solid #4ecdc4;">建立房間</button>
+          <span style="margin:0 6px;color:#666;">或</span>
+          <input id="pvp-room-input" type="text" placeholder="輸入房間碼" style="padding:4px 8px;border:1px solid #555;border-radius:4px;background:#1a1a3e;color:#eee;font-size:13px;width:120px;">
+          <button class="income-btn" id="pvp-join" style="border:2px solid #ff6b35;">加入房間</button>
+        </div>
+        <div id="pvp-lobby" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:6px;">
+          <div style="font-size:11px;color:#aaa;margin-bottom:4px;">玩家列表（環形送兵：1→2→3→…→1）</div>
+          <div id="pvp-player-list" style="font-size:12px;line-height:1.8;"></div>
+          <div style="margin-top:6px;">
+            <button class="income-btn" id="pvp-start-game" style="border:2px solid #e94560;display:none;">🚀 全員開始（Host）</button>
+          </div>
+        </div>
+        <div id="pvp-status" style="font-size:12px;color:#aaa;min-height:20px;"></div>
+      </div>
+      <button class="start-btn" id="start-btn">開始戰鬥</button>
+      <button onclick="showSkillRef()" style="margin-top:6px;padding:6px 18px;border:1px solid #b77aff;border-radius:4px;background:transparent;color:#b77aff;cursor:pointer;font-size:13px;">📖 技能說明</button>
+      <div id="autotest-panel" style="margin-top:12px;border-top:1px solid #333;padding-top:8px;display:none;">
+        <div style="font-size:10px;color:#888;margin-bottom:4px;">🤖 自動平衡測試</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+          <span style="font-size:10px;color:#aaa;">難度</span>
+          <input type="range" id="autotest-diff" min="0.5" max="2.0" step="0.1" value="1.0"
+            style="flex:1;accent-color:#ffd93d;cursor:pointer;">
+          <span id="autotest-diff-label" style="font-size:12px;color:#ffd93d;min-width:32px;text-align:center;">1.0×</span>
+        </div>
+        <div style="display:flex;gap:4px;">
+          <button class="income-btn" id="autotest-a" style="flex:1;border:2px solid #ffd93d;color:#ffd93d;font-size:11px;">A 經濟</button>
+          <button class="income-btn" id="autotest-b" style="flex:1;border:2px solid #4ecdc4;color:#4ecdc4;font-size:11px;">B 塔型</button>
+          <button class="income-btn" id="autotest-c" style="flex:1;border:2px solid #b77aff;color:#b77aff;font-size:11px;">C 三屬</button>
+          <button class="income-btn" id="autotest-d" style="flex:1;border:2px solid #ff9f43;color:#ff9f43;font-size:11px;">D 塔型</button>
+          <button class="income-btn" id="autotest-all" style="flex:1;border:2px solid #e94560;color:#e94560;font-size:11px;">全測</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script src="js/config.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/sends.js"></script>
+<script src="js/towers.js"></script>
+<script src="js/waves.js"></script>
+<script src="js/game.js"></script>
+<script src="autotest.js"></script>
+
+<!-- ── Sandbox Panel ─────────────────────────────────────────── -->
+<style>
+.sb-section { margin-bottom: 10px; }
+.sb-label { color: #ffd700; font-size: 0.82em; margin-bottom: 4px; }
+.sb-btn {
+  background: #1a1a2e; border: 1px solid #444; color: #ccc;
+  border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 0.82em;
+}
+.sb-btn:hover { border-color: #ffd700; color: #ffd700; }
+.active-speed { border-color: #4ecdc4; color: #4ecdc4; }
+</style>
+<script>
+(function() {
+  if (new URLSearchParams(location.search).get('sandbox') !== '1') return;
+
+  // 沙盒狀態（全域，供 game.js 讀取）
+  window.SANDBOX = { active: true, hpMult: 1.0, countMult: 1.0, infHP: false, noAiSend: false, fireDmg: { direct: 0, burn: 0, ignite: 0, detonate: 0 } };
+
+  var panel = document.createElement('div');
+  panel.id = 'sandboxPanel';
+  panel.style.cssText = 'position:fixed;top:10px;right:10px;z-index:9999;font-family:monospace;font-size:13px;user-select:none;';
+  panel.innerHTML =
+    '<div id="sandboxToggle" style="background:#1a1a1a;border:2px solid #ffd700;border-radius:6px 6px 0 0;padding:4px 12px;cursor:pointer;color:#ffd700;font-weight:bold;display:flex;align-items:center;gap:6px;">' +
+      '🧪 SANDBOX <span id="sandboxArrow">▼</span>' +
+    '</div>' +
+    '<div id="sandboxBody" style="background:#111;border:2px solid #ffd700;border-top:none;border-radius:0 0 6px 6px;padding:10px 12px;min-width:220px;display:none;">' +
+      '<div class="sb-section">' +
+        '<div class="sb-label">波次跳躍</div>' +
+        '<div style="display:flex;gap:6px;align-items:center;">' +
+          '<select id="sbWaveSelect" class="sb-input" style="width:60px;background:#1a1a2e;color:#ccc;border:1px solid #444;border-radius:4px;padding:2px;"></select>' +
+          '<button id="sbWaveGo" class="sb-btn">▶ Go</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="sb-section">' +
+        '<div class="sb-label">怪物倍率</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<span style="color:#888;width:30px">HP</span>' +
+          '<input id="sbHpMult" type="range" min="0.25" max="5" step="0.25" value="1" style="width:90px;">' +
+          '<span id="sbHpMultVal" style="color:#4ecdc4;width:35px">1.0x</span>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;">' +
+          '<span style="color:#888;width:30px">數量</span>' +
+          '<input id="sbCountMult" type="range" min="0.25" max="5" step="0.25" value="1" style="width:90px;">' +
+          '<span id="sbCountMultVal" style="color:#4ecdc4;width:35px">1.0x</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="sb-section">' +
+        '<div class="sb-label">金幣</div>' +
+        '<div style="display:flex;gap:6px;">' +
+          '<button id="sbGold1000" class="sb-btn">+1000g</button>' +
+          '<button id="sbGold9999" class="sb-btn">+9999g</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="sb-section">' +
+        '<div class="sb-label">元素解鎖</div>' +
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;">' +
+          '<button class="sb-elem-btn sb-btn" data-elem="fire">🔥</button>' +
+          '<button class="sb-elem-btn sb-btn" data-elem="water">💧</button>' +
+          '<button class="sb-elem-btn sb-btn" data-elem="wind">🌪️</button>' +
+          '<button class="sb-elem-btn sb-btn" data-elem="earth">⛰️</button>' +
+          '<button class="sb-elem-btn sb-btn" data-elem="thunder">⚡</button>' +
+          '<button class="sb-elem-btn sb-btn" data-elem="none">⬜</button>' +
+          '<button id="sbUnlockAll" class="sb-btn" style="color:#ffd700">全解鎖</button>' +
+        '</div>' +
+        '<button id="sbEssence" class="sb-btn" style="margin-top:4px;width:100%">💎 +100 精華（全元素）</button>' +
+      '</div>' +
+      '<div class="sb-section" style="display:flex;align-items:center;justify-content:space-between;">' +
+        '<div class="sb-label" style="margin-bottom:0">無限血量</div>' +
+        '<button id="sbInfHP" class="sb-btn" data-on="0" style="color:#888">○ OFF</button>' +
+      '</div>' +
+      '<div class="sb-section" style="display:flex;align-items:center;justify-content:space-between;">' +
+        '<div class="sb-label" style="margin-bottom:0">AI 派兵</div>' +
+        '<button id="sbNoAiSend" class="sb-btn" data-on="1" style="color:#4ecdc4">● ON</button>' +
+      '</div>' +
+      '<div class="sb-section">' +
+        '<div class="sb-label">遊戲速度</div>' +
+        '<div style="display:flex;gap:4px;">' +
+          '<button class="sb-speed-btn sb-btn active-speed" data-spd="1">1x</button>' +
+          '<button class="sb-speed-btn sb-btn" data-spd="2">2x</button>' +
+          '<button class="sb-speed-btn sb-btn" data-spd="4">4x</button>' +
+          '<button class="sb-speed-btn sb-btn" data-spd="8">8x</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="sb-section">' +
+        '<div class="sb-label">🔥 火系傷害統計</div>' +
+        '<div id="sbFireStats" style="font-size:11px;color:#ddd;line-height:1.8;"></div>' +
+        '<button class="sb-btn" onclick="window.resetFireDmg()">重置統計</button>' +
+      '</div>' +
+      '<div class="sb-section">' +
+        '<button id="sbRecord" class="sb-btn" style="width:100%">📋 記錄當前設定</button>' +
+        '<button id="sbLoad" class="sb-btn" style="width:100%;margin-top:4px;color:#4ecdc4">⬆ 讀取設定</button>' +
+        '<div id="sbRecordLog" style="font-size:10px;color:#aaa;margin-top:4px;line-height:1.7;max-height:80px;overflow-y:auto;"></div>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(panel);
+
+  // Wave select options 1~20
+  var sel = document.getElementById('sbWaveSelect');
+  for (var i = 1; i <= 20; i++) {
+    var opt = document.createElement('option');
+    opt.value = i; opt.textContent = i;
+    sel.appendChild(opt);
+  }
+
+  // 展開/收合
+  document.getElementById('sandboxToggle').addEventListener('click', function() {
+    var body = document.getElementById('sandboxBody');
+    var arrow = document.getElementById('sandboxArrow');
+    var isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    arrow.textContent = isOpen ? '▼' : '▲';
+  });
+
+  // 滑桿：更新顯示 + SANDBOX 狀態
+  document.getElementById('sbHpMult').addEventListener('input', function() {
+    window.SANDBOX.hpMult = parseFloat(this.value);
+    document.getElementById('sbHpMultVal').textContent = window.SANDBOX.hpMult.toFixed(2).replace(/\.?0+$/, '') + 'x';
+  });
+  document.getElementById('sbCountMult').addEventListener('input', function() {
+    window.SANDBOX.countMult = parseFloat(this.value);
+    document.getElementById('sbCountMultVal').textContent = window.SANDBOX.countMult.toFixed(2).replace(/\.?0+$/, '') + 'x';
+  });
+
+  function sbGame() { return window._game; }
+
+  // 波次跳躍
+  document.getElementById('sbWaveGo').addEventListener('click', function() {
+    var g = sbGame(); if (!g) { alert('請先開始遊戲'); return; }
+    var target = parseInt(document.getElementById('sbWaveSelect').value);
+    g.enemies = []; g.spawnQueue = [];
+    g.aiLaneTroops = []; g.aiLaneSpawnQueue = [];
+    g.projectiles = []; g.aiLaneProjectiles = [];
+    g.playerSendQueue = []; g.pvpIncomingSends = [];
+    g.wave = target - 1;
+    g.state = 'pre_wave';
+    g.myReady = false;
+    g.readyPlayers && g.readyPlayers.clear();
+    g.showPreWave && g.showPreWave();
+    g.rebuildSidebar && g.rebuildSidebar();
+    g.render();
+  });
+
+  // 金幣
+  document.getElementById('sbGold1000').addEventListener('click', function() {
+    var g = sbGame(); if (!g) return;
+    g.gold += 1000; g.render();
+  });
+  document.getElementById('sbGold9999').addEventListener('click', function() {
+    var g = sbGame(); if (!g) return;
+    g.gold += 9999; g.render();
+  });
+
+  // 元素解鎖（每按一次 +1 pick，上限 4）
+  document.querySelectorAll('.sb-elem-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var g = sbGame(); if (!g) return;
+      var e = this.dataset.elem;
+      g.elemPicks[e] = Math.min((g.elemPicks[e] || 0) + 1, 4);
+      g.rebuildSidebar && g.rebuildSidebar();
+      g.render();
+    });
+  });
+  document.getElementById('sbUnlockAll').addEventListener('click', function() {
+    var g = sbGame(); if (!g) return;
+    ['fire','water','wind','earth','thunder','none'].forEach(function(e) {
+      g.elemPicks[e] = 4;
+    });
+    g.rebuildSidebar && g.rebuildSidebar();
+    g.render();
+  });
+  document.getElementById('sbEssence').addEventListener('click', function() {
+    var g = sbGame(); if (!g) return;
+    ['fire','water','wind','earth','thunder','none'].forEach(function(e) {
+      g.essencePerElem[e] = (g.essencePerElem[e] || 0) + 100;
+    });
+    g.rebuildSidebar && g.rebuildSidebar();
+  });
+
+  // 無限血量
+  document.getElementById('sbInfHP').addEventListener('click', function() {
+    window.SANDBOX.infHP = !window.SANDBOX.infHP;
+    this.dataset.on = window.SANDBOX.infHP ? '1' : '0';
+    this.textContent = window.SANDBOX.infHP ? '● ON' : '○ OFF';
+    this.style.color = window.SANDBOX.infHP ? '#4ecdc4' : '#888';
+  });
+
+  // AI 派兵開關
+  document.getElementById('sbNoAiSend').addEventListener('click', function() {
+    window.SANDBOX.noAiSend = !window.SANDBOX.noAiSend;
+    var on = !window.SANDBOX.noAiSend;
+    this.dataset.on = on ? '1' : '0';
+    this.textContent = on ? '● ON' : '○ OFF';
+    this.style.color = on ? '#4ecdc4' : '#888';
+  });
+
+  // 遊戲速度
+  document.querySelectorAll('.sb-speed-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var g = sbGame(); if (!g) return;
+      document.querySelectorAll('.sb-speed-btn').forEach(function(b) { b.classList.remove('active-speed'); });
+      this.classList.add('active-speed');
+      g.gameSpeed = parseFloat(this.dataset.spd);
+    });
+  });
+
+  // 火系傷害統計
+  function updateFireStats() {
+    var fd = window.SANDBOX && window.SANDBOX.fireDmg;
+    if (!fd) return;
+    var total = fd.direct + fd.burn + fd.ignite + fd.detonate || 1;
+    var pct = function(v) { return (v / total * 100).toFixed(1) + '%'; };
+    var el = document.getElementById('sbFireStats');
+    if (!el) return;
+    el.innerHTML =
+      '直接: ' + Math.round(fd.direct) + ' (' + pct(fd.direct) + ')<br>' +
+      '灼燒: ' + Math.round(fd.burn)   + ' (' + pct(fd.burn)   + ')<br>' +
+      '引燃: ' + Math.round(fd.ignite) + ' (' + pct(fd.ignite) + ')<br>' +
+      '引爆: ' + Math.round(fd.detonate) + ' (' + pct(fd.detonate) + ')<br>' +
+      '<span style="color:#fa0">合計: ' + Math.round(fd.direct + fd.burn + fd.ignite + fd.detonate) + '</span>';
+  }
+  window.resetFireDmg = function() {
+    var fd = window.SANDBOX && window.SANDBOX.fireDmg;
+    if (fd) Object.keys(fd).forEach(function(k) { fd[k] = 0; });
+  };
+
+  // 記錄按鈕
+  document.getElementById('sbRecord').addEventListener('click', function() {
+    var g = sbGame();
+    var sb = window.SANDBOX;
+    var wave = g ? ('W' + (g.wave + 1)) : 'W?';
+    var spd = g ? (g.gameSpeed + 'x') : '?x';
+    var elemStr = '';
+    if (g && g.elemPicks) {
+      var icons = {fire:'🔥',water:'💧',wind:'🌪️',earth:'⛰️',thunder:'⚡',none:'⬜'};
+      Object.entries(g.elemPicks).forEach(function(kv) {
+        if (kv[1] > 0) elemStr += icons[kv[0]] + '×' + kv[1] + ' ';
+      });
+    }
+    var line = '[' + wave + '] HP' + sb.hpMult + 'x Cnt' + sb.countMult + 'x Spd:' + spd +
+      (elemStr ? ' ' + elemStr.trim() : '') +
+      (sb.infHP ? ' infHP' : '') +
+      (sb.noAiSend ? ' noAI' : '');
+    var log = document.getElementById('sbRecordLog');
+    var entries = log.innerHTML ? log.innerHTML.split('<br>').filter(Boolean) : [];
+    entries.unshift(line);
+    if (entries.length > 5) entries = entries.slice(0, 5);
+    log.innerHTML = entries.join('<br>');
+    var cfg = {
+      hpMult:    sb.hpMult,
+      countMult: sb.countMult,
+      infHP:     sb.infHP,
+      noAiSend:  sb.noAiSend,
+      gameSpeed: g ? (g.gameSpeed || 1) : 1,
+      elemPicks: g ? Object.assign({}, g.elemPicks) : {}
+    };
+    localStorage.setItem('sbConfig', JSON.stringify(cfg));
+  });
+
+  // 讀取設定
+  document.getElementById('sbLoad').addEventListener('click', function() {
+    var raw = localStorage.getItem('sbConfig');
+    if (!raw) { alert('尚無記錄'); return; }
+    var cfg = JSON.parse(raw);
+    var g = sbGame();
+    var sb = window.SANDBOX;
+
+    sb.hpMult = cfg.hpMult;
+    document.getElementById('sbHpMult').value = cfg.hpMult;
+    document.getElementById('sbHpMultVal').textContent = cfg.hpMult + 'x';
+
+    sb.countMult = cfg.countMult;
+    document.getElementById('sbCountMult').value = cfg.countMult;
+    document.getElementById('sbCountMultVal').textContent = cfg.countMult + 'x';
+
+    sb.infHP = cfg.infHP;
+    var infBtn = document.getElementById('sbInfHP');
+    infBtn.dataset.on = cfg.infHP ? '1' : '0';
+    infBtn.textContent = cfg.infHP ? '● ON' : '○ OFF';
+    infBtn.style.color = cfg.infHP ? '#4ecdc4' : '#888';
+
+    sb.noAiSend = cfg.noAiSend;
+    var aiBtn = document.getElementById('sbNoAiSend');
+    var aiOn = !cfg.noAiSend;
+    aiBtn.dataset.on = aiOn ? '1' : '0';
+    aiBtn.textContent = aiOn ? '● ON' : '○ OFF';
+    aiBtn.style.color = aiOn ? '#4ecdc4' : '#888';
+
+    if (g && cfg.gameSpeed) {
+      g.gameSpeed = cfg.gameSpeed;
+      document.querySelectorAll('.sb-speed-btn').forEach(function(b) {
+        b.classList.toggle('active-speed', parseFloat(b.dataset.spd) === cfg.gameSpeed);
+      });
+    }
+
+    if (g && cfg.elemPicks) {
+      Object.assign(g.elemPicks, cfg.elemPicks);
+      g.rebuildSidebar && g.rebuildSidebar();
+      g.render && g.render();
+    }
+  });
+
+  setInterval(updateFireStats, 500);
+})();
+</script>
+<!-- ── End Sandbox Panel ──────────────────────────────────────── -->
+<!-- ── Skill Reference Overlay ────────────────────────────────── -->
+<script>
+function showSkillRef() {
+  const overlay = document.getElementById('skill-ref-overlay');
+  const content = document.getElementById('skill-ref-content');
+
+  const tabs = [
+    { id: 'sr-tower', label: '🗡️ 塔技能', build: buildTowerTab },
+    { id: 'sr-enemy', label: '👾 敵人被動', build: buildEnemyTab },
+    { id: 'sr-caps',  label: '📊 全域上限', build: buildCapsTab },
+  ];
+
+  let html = '<h2 style="color:#b77aff;margin:0 0 10px;">📖 技能說明</h2>';
+  html += '<div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;">';
+  for (const t of tabs) {
+    html += `<button class="sr-tab-btn" data-tab="${t.id}" style="padding:6px 14px;border:1px solid #555;border-radius:4px 4px 0 0;background:#1a1a3e;color:#aaa;cursor:pointer;font-size:12px;">${t.label}</button>`;
+  }
+  html += '</div><div id="sr-tab-content"></div>';
+  content.innerHTML = html;
+
+  const btns = content.querySelectorAll('.sr-tab-btn');
+  function switchTab(tabId) {
+    btns.forEach(b => {
+      const active = b.dataset.tab === tabId;
+      b.style.background = active ? '#2a1a3e' : '#1a1a3e';
+      b.style.color = active ? '#b77aff' : '#aaa';
+      b.style.borderBottom = active ? '2px solid #b77aff' : '1px solid #555';
+    });
+    const tab = tabs.find(t => t.id === tabId);
+    document.getElementById('sr-tab-content').innerHTML = tab ? tab.build() : '';
+  }
+  btns.forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+  switchTab('sr-tower');
+  overlay.style.display = 'flex';
+}
+
+// ── 工具：產生技能說明卡片 ──────────────────────────────────────
+function srCard(icon, name, params, desc, warn) {
+  const warnHtml = warn
+    ? `<div style="color:#f93;font-size:11px;margin-top:3px;">⚠️ ${warn}</div>`
+    : '';
+  const paramsHtml = params
+    ? `<span style="color:#4ecdc4;font-size:11px;">${params}</span> `
+    : '';
+  return `<div style="border:1px solid #2a2a4e;border-radius:6px;padding:8px 10px;margin-bottom:6px;background:#12122a;">
+    <div style="margin-bottom:3px;">${icon} <b style="color:#eee;">${name}</b> ${paramsHtml}</div>
+    <div style="color:#bbb;font-size:11px;line-height:1.6;">${desc}</div>${warnHtml}
+  </div>`;
+}
+
+function srSection(title, color, cards) {
+  return `<div style="margin-bottom:14px;">
+    <div style="color:${color};font-weight:bold;font-size:12px;border-bottom:1px solid #333;padding-bottom:3px;margin-bottom:6px;">${title}</div>
+    ${cards}
+  </div>`;
+}
+
+// ── Tab 1：塔技能 ──────────────────────────────────────────────
+function buildTowerTab() {
+  const C = GLOBAL_CAPS;
+  let out = '';
+
+  // 傷害
+  out += srSection('🔥 傷害', '#ff6b6b',
+    srCard('🔥', '灼燒 burn',
+      `dot=${SKILL_DEFS.burn.defaults.dot} dur=${SKILL_DEFS.burn.defaults.dur}s`,
+      `命中後施加灼燒 DOT：每秒造成 <b>dot × 塔damage × 塔atkSpd</b> 傷害，持續 dur 秒。<br>
+       重複命中覆蓋計時器（取最新塔的數值）。覆蓋時若同塔有引燃則先觸發引燃。<br>
+       每次有 burn 技能的塔命中，目標的 burnStacks +1。`
+    ) +
+    srCard('🔥', '引燃 ignite',
+      `flat=${SKILL_DEFS.ignite.defaults.flat}`,
+      `目標已有灼燒（burnTimer > 0）時命中，額外造成 <b>flat × baseDmg</b> 傷害。<br>
+       需與 burn 在<b>同一塔</b>；灼燒層數可由任意 burn 塔貢獻。`
+    ) +
+    srCard('💥', '引爆 detonate',
+      `ratio=${SKILL_DEFS.detonate.defaults.ratio}`,
+      `目標 burnStacks 累積到 <b>3</b> 時，由擁有此技能的塔命中即觸發：造成 <b>ratio × baseDmg 真傷</b>（無視護甲/易傷），觸發後 burnStacks 歸零。<br>
+       burnStacks 是<b>全域計數</b>，所有 burn 塔共用（A塔疊2層，B塔疊第3層可引爆）。<br>
+       灼燒熄滅（burnTimer 歸零）時 burnStacks 同步清零 → 需持續輸出才能維持引爆節奏。`
+    ) +
+    srCard('⛓️', '連鎖 chain',
+      `targets=${SKILL_DEFS.chain.defaults.targets} decay=${SKILL_DEFS.chain.defaults.decay}`,
+      `攻擊主目標後，從<b>射程內</b>其他敵人（依路徑進度排序）取前 targets 個依序連鎖。<br>
+       第 i 跳傷害 = 主目標傷害 × decay<sup>i</sup>（i 從 1 起），正常觸發各技能效果。`
+    ) +
+    srCard('🗡️', '斬殺 execute',
+      `threshold=${SKILL_DEFS.execute.defaults.threshold} mult=${SKILL_DEFS.execute.defaults.mult}`,
+      `目標當前 HP < threshold × maxHP 時，本次傷害乘以 mult（在護甲計算前套用）。`
+    ) +
+    srCard('💀', '%HP傷害 hpPct',
+      `pct=${SKILL_DEFS.hpPct.defaults.pct} every=${SKILL_DEFS.hpPct.defaults.every} cd=${SKILL_DEFS.hpPct.defaults.cd}s`,
+      `每第 every 次攻擊附加 <b>floor(maxHP × pct) 真傷</b>。同一目標有 cd 秒冷卻（冷卻中跳過）。`
+    ) +
+    srCard('🥶', '凍傷 frostbite',
+      `dmgPct=${SKILL_DEFS.frostbite.defaults.dmgPct} dur=${SKILL_DEFS.frostbite.defaults.dur}s`,
+      `命中後施加凍傷：每秒造成目標 <b>dmgPct × maxHP 水系傷害</b>（受元素三角影響），持續 dur 秒。<br>
+       多次命中取最大值（不疊加、不延長）。`
+    ) +
+    srCard('💚', '生命汲取 lifedrain',
+      `pct=${SKILL_DEFS.lifedrain.defaults.pct}`,
+      `每次造成傷害後，回復基地 HP = max(1, floor(finalDmg × pct))，上限 maxHP。`
+    )
+  );
+
+  // 控制
+  out += srSection('❄️ 控制', '#74b9ff',
+    srCard('❄️', '冰冷 chill',
+      `stacksPerHit=${SKILL_DEFS.chill.defaults.stacksPerHit}`,
+      `每次攻擊疊 stacksPerHit 層（上限 ${C.chillMaxStacks} 層）。<br>
+       速度乘以 <b>1 − min(層數 × ${C.chillPerStack * 100}%, ${C.slowPct * 100}%)</b>（每層 −${C.chillPerStack * 100}%，上限 −${C.slowPct * 100}%）。<br>
+       命中時重置衰減計時器；無命中時每秒衰減 ${C.chillDecayRate} 層。`
+    ) +
+    srCard('❄️', '冰凍 freeze',
+      `threshold=${SKILL_DEFS.freeze.defaults.threshold} dur=${SKILL_DEFS.freeze.defaults.dur}s`,
+      `冰冷層數達到 threshold 時觸發定身 dur 秒，冰冷歸零。受韌性（tenacity）影響。`
+    ) +
+    srCard('🌀', '扭曲 warp',
+      `dur=${SKILL_DEFS.warp.defaults.dur}s cd=${SKILL_DEFS.warp.defaults.cd}s`,
+      `每次攻擊令目標定身 dur 秒，此塔有 cd 秒獨立冷卻。受韌性影響。`
+    ) +
+    srCard('💨', '擊退 knockback',
+      `dist=${SKILL_DEFS.knockback.defaults.dist} cd=${SKILL_DEFS.knockback.defaults.cd}s`,
+      `每次攻擊將目標路徑索引倒退 dist 格，此塔有 cd 秒獨立冷卻。`
+    )
+  );
+
+  // 弱化
+  out += srSection('🔩 弱化', '#fdcb6e',
+    srCard('🔩', '碎甲 shred',
+      `stacksPerHit=${SKILL_DEFS.shred.defaults.stacksPerHit}`,
+      `每次攻擊疊 stacksPerHit 層（上限 ${C.shredMaxStacks} 層）。<br>
+       有效護甲 = max(0, 原護甲 − 層數 × ${C.shredPerStack * 100}%)（上限 −${C.shredMaxStacks * C.shredPerStack * 100}%）。<br>
+       每秒衰減 ${C.shredDecayRate} 層。`
+    ) +
+    srCard('💔', '易傷 vulnerability',
+      `stacksPerHit=${SKILL_DEFS.vulnerability.defaults.stacksPerHit}`,
+      `每次攻擊疊 stacksPerHit 層（上限 ${C.vulnMaxStacks} 層）。<br>
+       目標受傷乘以 <b>1 + 層數 × ${C.vulnPerStack * 100}%</b>（上限 +${C.vulnMaxStacks * C.vulnPerStack * 100}%）。<br>
+       每秒衰減 ${C.vulnDecayRate} 層。`
+    )
+  );
+
+  // 增益
+  out += srSection('✨ 增益', '#a29bfe',
+    srCard('⚡', '越攻越快 ramp',
+      `perHit=${SKILL_DEFS.ramp.defaults.perHit} cap=${SKILL_DEFS.ramp.defaults.cap}`,
+      `連續攻擊<b>同一</b>目標每次 +perHit 攻速加成（累積），上限 +cap。切換目標時歸零。`
+    ) +
+    srCard('🔴', '傷害光環 aura_dmg',
+      `radius=${SKILL_DEFS.aura_dmg.defaults.radius} flat=${SKILL_DEFS.aura_dmg.defaults.flat} pct=${SKILL_DEFS.aura_dmg.defaults.pct}`,
+      `每幀計算：半徑 radius 格內所有友軍塔，傷害 +flat（定值）且乘以 (1 + pct)。多來源疊加。`
+    ) +
+    srCard('🟡', '攻速光環 aura_atkSpd',
+      `radius=${SKILL_DEFS.aura_atkSpd.defaults.radius} bonus=${SKILL_DEFS.aura_atkSpd.defaults.bonus}`,
+      `每幀：半徑 radius 格內友軍攻速加成 +bonus（多來源疊加，上限 +${C.atkSpdBonus * 100}%）。`
+    ) +
+    srCard('🟢', '射程光環 aura_range',
+      `radius=${SKILL_DEFS.aura_range.defaults.radius} bonus=${SKILL_DEFS.aura_range.defaults.bonus}`,
+      `每幀：半徑 radius 格內友軍射程 +bonus（多來源相加）。`
+    )
+  );
+
+  // 特殊
+  out += srSection('⭐ 特殊', '#55efc4',
+    srCard('🌪️', '三連射 multishot',
+      `every=${SKILL_DEFS.multishot.defaults.every} shots=${SKILL_DEFS.multishot.defaults.shots} killBonus=${SKILL_DEFS.multishot.defaults.killBonus} killDur=${SKILL_DEFS.multishot.defaults.killDur}s`,
+      `每第 every 次攻擊改射 shots 發（可分打不同目標）。擊殺後 killDur 秒內攻速加成 +killBonus。`
+    ) +
+    srCard('🌪️', '穿透 pierce',
+      `dmgUp=${SKILL_DEFS.pierce.defaults.dmgUp}`,
+      `改為穿透攻擊：對射程內所有目標各打一次。第 i 個目標（0起）傷害 = baseDmg × (1 + i × dmgUp)。`
+    ) +
+    srCard('🔵', '減速領域 zone_slow',
+      `radius=${SKILL_DEFS.zone_slow.defaults.radius} chillStacks=${SKILL_DEFS.zone_slow.defaults.chillStacks}`,
+      `命中後在目標位置留下圓圈（半徑 radius 格，持續 3 秒）。<br>
+       圓圈存在期間每幀：圈內敵人冰冷層數維持在 ≥ chillStacks（取 max，不累加）。`
+    ) +
+    srCard('🟤', '碎甲領域 zone_shred',
+      `radius=${SKILL_DEFS.zone_shred.defaults.radius} shredStacks=${SKILL_DEFS.zone_shred.defaults.shredStacks}`,
+      `同 zone_slow，改為維持目標碎甲層數 ≥ shredStacks。`
+    ) +
+    srCard('💰', '擊殺獎金 killGold',
+      `bonus=${SKILL_DEFS.killGold.defaults.bonus}`,
+      `此塔擊殺目標時，額外獲得金幣 = floor(敵人killGold × bonus)。`
+    ) +
+    srCard('🎲', '不穩定 unstable',
+      `variance=${SKILL_DEFS.unstable.defaults.variance}`,
+      `每次傷害乘以 1 + rand(−1,1) × variance（均勻隨機，範圍 ±${SKILL_DEFS.unstable.defaults.variance * 100}%）。`
+    ) +
+    srCard('⭐', '永久強化 permaBuff',
+      `atkPerKill=${SKILL_DEFS.permaBuff.defaults.atkPerKill}`,
+      `每次擊殺後此塔永久 +atkPerKill 攻擊力（額外加值持續累積）。`
+    )
+  );
+
+  return out;
+}
+
+// ── Tab 2：敵人被動 ────────────────────────────────────────────
+function buildEnemyTab() {
+  const C = GLOBAL_CAPS;
+  return srSection('👾 敵人被動', '#fab1a0',
+    srCard('♻️', '再生 regen',
+      `pct=${SKILL_DEFS.regen.defaults.pct}`,
+      `每秒回復 pct × maxHP 的 HP。`
+    ) +
+    srCard('🛡️', '護甲成長 armorStack',
+      `perHit=${SKILL_DEFS.armorStack.defaults.perHit} cap=${SKILL_DEFS.armorStack.defaults.cap}`,
+      `每次被攻擊護甲 +perHit，上限 +cap（在基礎護甲之上累加）。`
+    ) +
+    srCard('😡', '狂暴 enrage',
+      `hpThreshold=${SKILL_DEFS.enrage.defaults.hpThreshold} spdMult=${SKILL_DEFS.enrage.defaults.spdMult}`,
+      `當前 HP < hpThreshold × maxHP 時，速度乘以 spdMult。`
+    ) +
+    srCard('🛡️', '護盾 shield',
+      '',
+      `當 HP 首次降至 0 時，HP 恢復為 1 而非死亡（僅觸發一次）。`,
+      '參數 amt / regen 目前未實裝，以上描述依程式碼行為為準'
+    ) +
+    srCard('💨', '衝鋒 charge',
+      `dur=${SKILL_DEFS.charge.defaults.dur}s spdMult=${SKILL_DEFS.charge.defaults.spdMult}`,
+      `生成後首 dur 秒內速度乘以 spdMult，計時結束後恢復正常。`
+    ) +
+    srCard('👤', '閃避 dodge',
+      `chance=${SKILL_DEFS.dodge.defaults.chance}`,
+      `每次被攻擊有 chance 機率完全免疫本次所有傷害（在計算前跳出）。`
+    ) +
+    srCard('💪', '韌性 tenacity',
+      `ccReduce=${SKILL_DEFS.tenacity.defaults.ccReduce}`,
+      `所有 CC 持續時間（freeze、warp）乘以 (1 − ccReduce)。`
+    ) +
+    srCard('⚡', '閃現 blink',
+      `hpTrigger=${SKILL_DEFS.blink.defaults.hpTrigger} dist=${SKILL_DEFS.blink.defaults.dist} cd=${SKILL_DEFS.blink.defaults.cd}s`,
+      `HP < hpTrigger × maxHP 時，每 cd 秒向前閃現 dist 格（pathIdx += dist）。`
+    ) +
+    srCard('💀', '分裂 splitOnDeath',
+      `count=${SKILL_DEFS.splitOnDeath.defaults.count} hpRatio=${SKILL_DEFS.splitOnDeath.defaults.hpRatio}`,
+      `死亡時生成 count 個分身（HP = floor(maxHP × hpRatio)，繼承護甲/抗性，無技能）。`
+    ) +
+    srCard('🔄', '元素適應 antiElement',
+      '',
+      `追蹤各元素對此敵人造成的累積傷害。最高累積元素每超過門檻值，對該元素抗性 +0.5%（上限 50%）。<br>
+       抗性緩慢累積，早期幾乎無效。`,
+      '參數 reduce 目前未實裝，80傷害門檻與0.5%增量為程式碼硬編碼值'
+    ) +
+    srCard('👻', '隱身 stealth',
+      `dur=${SKILL_DEFS.stealth.defaults.dur}s cd=${SKILL_DEFS.stealth.defaults.cd}s`,
+      `隱身期間塔無法鎖定此敵人（顯示 30% 透明度）。持續 dur 秒後重新可見，冷卻 cd 秒再次隱身。`
+    ) +
+    srCard('👥', '召喚 summon',
+      `cd=${SKILL_DEFS.summon.defaults.cd}s count=${SKILL_DEFS.summon.defaults.count} hpRatio=${SKILL_DEFS.summon.defaults.hpRatio}`,
+      `每 cd 秒召喚 count 個小怪（HP = floor(maxHP × hpRatio)，速度繼承，無技能），在本體後方生成。`
+    ) +
+    srCard('🔮', '相位偏移 phaseShift',
+      '',
+      `每損失 1/phases HP 時切換相位，各相位具有不同元素抗性與受傷減免。`,
+      '設計過於複雜，未完成待討論，具體行為待定案後更新'
+    ) +
+    srCard('🏰', '堅固 fortify',
+      `dmgCap=${SKILL_DEFS.fortify.defaults.dmgCap}`,
+      `每次受到傷害的上限為 dmgCap（在所有加成計算後套用）。`
+    ) +
+    srCard('🔰', '不屈 resilient',
+      `stack=${SKILL_DEFS.resilient.defaults.stack} cap=${SKILL_DEFS.resilient.defaults.cap}`,
+      `每次被攻擊後受傷減少 stack%，上限 cap%（累積疊加）。`
+    )
+  );
+}
+
+// ── Tab 3：全域上限 & 互動 ─────────────────────────────────────
+function buildCapsTab() {
+  const C = GLOBAL_CAPS;
+  return `
+    <div style="margin-bottom:14px;">
+      <div style="color:#ffd93d;font-weight:bold;font-size:12px;border-bottom:1px solid #333;padding-bottom:3px;margin-bottom:8px;">📊 全域上限值</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;color:#ccc;">
+        <tr style="color:#888;"><th style="text-align:left;padding:3px 8px;">參數</th><th style="text-align:left;padding:3px 8px;">數值</th><th style="text-align:left;padding:3px 8px;">說明</th></tr>
+        <tr><td style="padding:3px 8px;">slowPct</td><td style="padding:3px 8px;color:#74b9ff;">${C.slowPct * 100}%</td><td style="padding:3px 8px;">冰冷減速上限</td></tr>
+        <tr><td style="padding:3px 8px;">chillPerStack</td><td style="padding:3px 8px;color:#74b9ff;">−${C.chillPerStack * 100}%</td><td style="padding:3px 8px;">每層冰冷減速量</td></tr>
+        <tr><td style="padding:3px 8px;">chillMaxStacks</td><td style="padding:3px 8px;color:#74b9ff;">${C.chillMaxStacks}</td><td style="padding:3px 8px;">冰冷最大層數（達到 = 上限減速）</td></tr>
+        <tr><td style="padding:3px 8px;">chillDecayRate</td><td style="padding:3px 8px;color:#74b9ff;">${C.chillDecayRate} 層/秒</td><td style="padding:3px 8px;">冰冷衰減速率</td></tr>
+        <tr><td style="padding:3px 8px;">shredPerStack</td><td style="padding:3px 8px;color:#fdcb6e;">−${C.shredPerStack * 100}%</td><td style="padding:3px 8px;">每層碎甲護甲穿透量</td></tr>
+        <tr><td style="padding:3px 8px;">shredMaxStacks</td><td style="padding:3px 8px;color:#fdcb6e;">${C.shredMaxStacks}</td><td style="padding:3px 8px;">碎甲最大層數（上限 −${C.shredMaxStacks * C.shredPerStack * 100}%）</td></tr>
+        <tr><td style="padding:3px 8px;">shredDecayRate</td><td style="padding:3px 8px;color:#fdcb6e;">${C.shredDecayRate} 層/秒</td><td style="padding:3px 8px;">碎甲衰減速率</td></tr>
+        <tr><td style="padding:3px 8px;">vulnPerStack</td><td style="padding:3px 8px;color:#ff7675;">+${C.vulnPerStack * 100}%</td><td style="padding:3px 8px;">每層易傷增傷量</td></tr>
+        <tr><td style="padding:3px 8px;">vulnMaxStacks</td><td style="padding:3px 8px;color:#ff7675;">${C.vulnMaxStacks}</td><td style="padding:3px 8px;">易傷最大層數（上限 +${C.vulnMaxStacks * C.vulnPerStack * 100}%）</td></tr>
+        <tr><td style="padding:3px 8px;">vulnDecayRate</td><td style="padding:3px 8px;color:#ff7675;">${C.vulnDecayRate} 層/秒</td><td style="padding:3px 8px;">易傷衰減速率</td></tr>
+        <tr><td style="padding:3px 8px;">atkSpdBonus</td><td style="padding:3px 8px;color:#a29bfe;">+${C.atkSpdBonus * 100}%</td><td style="padding:3px 8px;">攻速加成上限（光環疊加）</td></tr>
+        <tr><td style="padding:3px 8px;">procMinInterval</td><td style="padding:3px 8px;color:#aaa;">${C.procMinInterval}s</td><td style="padding:3px 8px;">proc 最小間隔</td></tr>
+        <tr><td style="padding:3px 8px;">hpPctCd</td><td style="padding:3px 8px;color:#aaa;">${C.hpPctCd}s</td><td style="padding:3px 8px;">%HP傷害每目標冷卻</td></tr>
+      </table>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="color:#ff6b6b;font-weight:bold;font-size:12px;border-bottom:1px solid #333;padding-bottom:3px;margin-bottom:8px;">🔥 火系技能互動：burn + ignite + detonate</div>
+      <div style="font-size:11px;color:#ccc;line-height:1.8;">
+        <b style="color:#eee;">基本節奏（單塔 burn + detonate）：</b><br>
+        命中1（stacks=1）→ 命中2（stacks=2）→ <b style="color:#ff6b6b;">命中3（stacks=3 → 引爆，歸零）</b> → 重新累積<br><br>
+        <b style="color:#eee;">多塔分工：</b><br>
+        burn-only 塔（高攻速）累積 stacks → burn+detonate 塔命中時若 stacks≥3 立即引爆<br>
+        灼燒熄滅時 stacks 歸零，需持續補火才能維持引爆節奏<br><br>
+        <b style="color:#eee;">ignite 觸發條件：</b><br>
+        目標已有灼燒（burnTimer &gt; 0）時，同塔有 ignite 的攻擊命中 → 觸發引燃傷害
+      </div>
+    </div>
+    <div>
+      <div style="color:#74b9ff;font-weight:bold;font-size:12px;border-bottom:1px solid #333;padding-bottom:3px;margin-bottom:8px;">❄️ 冰系技能互動：chill + freeze</div>
+      <div style="font-size:11px;color:#ccc;line-height:1.8;">
+        chill 持續疊層 → 達到 freeze.threshold 層時觸發定身，冰冷歸零 → 重新疊層<br>
+        zone_slow 可在目標進入圓圈時強制維持最低層數（不計為新命中，不重置衰減）<br>
+        Boss 等有 tenacity 的目標：定身時間乘以 (1 − ccReduce)
+      </div>
+    </div>`;
+}
+</script>
+<!-- ── End Skill Reference Overlay ────────────────────────────── -->
+</body>
+</html>

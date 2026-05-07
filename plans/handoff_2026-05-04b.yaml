@@ -1,0 +1,47 @@
+session_date: 2026-05-04
+project: tower-defense-prototype
+resume_trigger: "繼續塔防沙盒"
+
+summary: |
+  本次 session：
+  1. think score-sandbox — 規劃評分快速調整 + 沙盒測試模式（4 步計畫）
+  2. execute score-sandbox/step1 — dps-calc.html 評分公式權重面板完成
+
+completed:
+  - plans/active/score-sandbox/ 建立（index + step1~4.md）
+  - score-sandbox step1：dps-calc.html
+      - SCORE_WEIGHT_DEFAULTS 26 個係數（物件）
+      - scoreWeights 可覆寫工作副本
+      - calcTowerScore() 全部改讀 W.xxx
+      - getLv4Range() 動態色碼範圍
+      - <details> 折疊面板 4 欄（基礎/傷害技能/CC輔助/光環）
+      - 修改值金色標示，↺ 重置預設
+
+changed_files:
+  - dps-calc.html    # scoreWeights + weight panel UI
+
+active_plans:
+  - name: score-sandbox
+    path: plans/active/score-sandbox/
+    next_step: step2.md
+    remaining: [step2, step3, step4]
+
+next_steps:
+  - execute score-sandbox/step2.md
+      # dps-calc.html：score_adj inline 編輯 + overrideAdj 系統 + 匯出差異按鈕
+  - execute score-sandbox/step3.md
+      # index.html：?sandbox=1 浮動面板 DOM
+  - execute score-sandbox/step4.md
+      # index.html：沙盒功能接線（波次跳躍、怪物倍率、金幣、元素、無限血量、速度）
+
+key_values:
+  lv4_target_score: 410
+  score_acceptable_range: "348~472 (±15%)"
+  hpPct_cap: 120
+  scoreWeights_defaults:
+    dpsScaleConst: 2.841
+    aoeScoreMod: 0.7
+    burn: 150
+    chill: 50
+    hpPct_norm: 1500
+    hpPct_boss: 7000

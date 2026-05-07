@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>DPS 試算工具</title>
+  <script src="js/skills.js"></script>
+  <script src="js/towers.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace, 'Noto Sans TC', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 16px; font-size: 14px; }
+    h1 { color: #ffd700; margin-bottom: 14px; font-size: 1.1em; }
+
+    .controls {
+      background: #16213e; border: 1px solid #0f3460; border-radius: 8px;
+      padding: 10px 14px; margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+    }
+    .controls label { display: flex; align-items: center; gap: 6px; font-size: 0.85em; color: #ccc; }
+    .controls input {
+      background: #0f3460; border: 1px solid #4ecdc4; color: #e0e0e0;
+      border-radius: 4px; padding: 3px 7px; font-size: 0.9em; width: 80px;
+    }
+
+    .filters {
+      background: #16213e; border: 1px solid #0f3460; border-radius: 8px;
+      padding: 8px 14px; margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    }
+    .filter-label { font-size: 0.8em; color: #888; margin-right: 2px; }
+    .filter-sep { width: 1px; background: #0f3460; height: 20px; margin: 0 6px; }
+    .filter-btn {
+      background: #0f3460; border: 1px solid #334; color: #888;
+      border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 0.82em; transition: all 0.12s;
+    }
+    .filter-btn:hover { border-color: #4ecdc4; color: #ccc; }
+    .filter-btn.active { background: #4ecdc4; color: #1a1a2e; font-weight: bold; border-color: #4ecdc4; }
+
+    .summary { color: #666; font-size: 0.78em; margin-bottom: 8px; }
+
+    table { width: 100%; border-collapse: collapse; }
+    thead { position: sticky; top: 0; z-index: 10; }
+    th {
+      background: #0f3460; color: #ffd700; padding: 7px 10px;
+      text-align: left; cursor: pointer; user-select: none; white-space: nowrap;
+    }
+    th:hover { background: #1a4070; }
+    th.sorted-asc::after { content: ' ▲'; font-size: 0.75em; }
+    th.sorted-desc::after { content: ' ▼'; font-size: 0.75em; }
+    th.no-sort { cursor: default; }
+
+    tr.data-row { cursor: pointer; }
+    tr.data-row:hover td { background: #1a3060; }
+    tr.data-row:nth-child(4n+1) td, tr.data-row:nth-child(4n+2) td { background: #181828; }
+    tr.data-row:nth-child(4n+3) td, tr.data-row:nth-child(4n+4) td { background: #16213e; }
+    tr.data-row:hover td { background: #1a3060 !important; }
+    td { padding: 5px 10px; border-bottom: 1px solid #0f3460; }
+
+    .col-rank { width: 30px; color: #ffd700; font-weight: bold; }
+    .col-edps { color: #ff6b35; font-weight: bold; }
+    .col-cost { color: #ffd700; }
+    .col-ratio { color: #4ecdc4; }
+    .col-dps { color: #aaa; }
+
+    .lv-badge {
+      display: inline-block; padding: 1px 5px; border-radius: 3px;
+      font-size: 0.72em; font-weight: bold; margin-left: 4px; vertical-align: middle;
+    }
+    .skill-brief { color: #666; font-size: 0.78em; margin-left: 5px; }
+
+    tr.detail-row { display: none; }
+    tr.detail-row.open { display: table-row; }
+    tr.detail-row td {
+      background: #0a1628 !important;
+      padding: 12px 16px;
+      border-bottom: 2px solid #0f3460;
+    }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .detail-stats h3 { color: #ffd700; margin-bottom: 8px; font-size: 1em; }
+    .detail-stats p { color: #ccc; line-height: 1.7; font-size: 0.88em; }
+    .detail-stats b { color: #e0e0e0; }
+    .detail-skills h3 { color: #4ecdc4; margin-bottom: 8px; font-size: 1em; }
+    .detail-skills pre {
+      color: #aaa; font-size: 0.85em; white-space: pre-wrap;
+      line-height: 1.6; font-family: monospace;
+    }
+    .desc-text { color: #777; font-style: italic; font-size: 0.85em; margin-top: 4px; }
+    .param-input {
+      background: #0f3460; border: 1px solid #334; color: #e0e0e0;
+      border-radius: 3px; padding: 2px 4px; font-size: 0.82em; width: 55px;
+    }
+    .param-input.param-modified { border-color: #ff6b35; color: #ff6b35; }
+    .param-reset:hover { border-color: #4ecdc4 !important; color: #4ecdc4 !important; }
+
+    #weightPanel {
+      background: #16213e; border: 1px solid #0f3460; border-radius: 8px;
+      padding: 0; margin-bottom: 10px;
+    }
+    #weightPanel summary {
+      padding: 7px 14px; cursor: pointer; color: #ffd700;
+      font-size: 0.88em; user-select: none; list-style: none;
+    }
+    #weightPanel summary::-webkit-details-marker { display: none; }
+    #weightPanel summary::before { content: '▶ '; font-size: 0.75em; }
+    #weightPanel[open] summary::before { content: '▼ '; }
+    .wg-wrap { display: flex; flex-wrap: wrap; gap: 16px; padding: 8px 14px 12px; }
+    .wg-col { display: flex; flex-direction: column; gap: 5px; min-width: 160px; }
+    .wg-section { color: #4ecdc4; font-size: 0.78em; font-weight: bold;
+      text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 3px; }
+    .wg-row { display: flex; align-items: center; gap: 6px; }
+    .wg-label { color: #999; font-size: 0.8em; width: 90px; flex-shrink: 0; }
+    .wg-input {
+      background: #0f3460; border: 1px solid #334; color: #e0e0e0;
+      border-radius: 3px; padding: 2px 5px; font-size: 0.82em; width: 60px;
+    }
+    .wg-input.modified { border-color: #ffd700; color: #ffd700; }
+    #resetWeights {
+      margin-top: 6px; background: #0f3460; border: 1px solid #444; color: #888;
+      border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 0.8em;
+    }
+    #resetWeights:hover { border-color: #4ecdc4; color: #4ecdc4; }
+
+    /* Help Modal */
+    #helpModal {
+      display: none; position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,0.7); align-items: flex-start; justify-content: center;
+      padding: 24px 16px; overflow-y: auto;
+    }
+    #helpModal.open { display: flex; }
+    #helpBox {
+      background: #16213e; border: 1px solid #0f3460; border-radius: 10px;
+      padding: 20px 24px; max-width: 720px; width: 100%; position: relative;
+    }
+    #helpBox h2 { color: #ffd700; margin-bottom: 14px; font-size: 1em; }
+    #helpBox h3 { color: #4ecdc4; margin: 14px 0 6px; font-size: 0.9em; }
+    #helpBox p, #helpBox li { color: #ccc; font-size: 0.83em; line-height: 1.7; }
+    #helpBox code { background: #0f3460; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; color: #e0e0e0; }
+    #helpBox table { border-collapse: collapse; width: 100%; margin: 6px 0; }
+    #helpBox th { background: #0f3460; color: #ffd700; padding: 5px 9px; font-size: 0.8em; text-align: left; }
+    #helpBox td { padding: 4px 9px; border-bottom: 1px solid #0f3460; font-size: 0.82em; color: #ccc; }
+    #helpClose {
+      position: absolute; top: 12px; right: 14px;
+      background: none; border: none; color: #888; font-size: 1.2em; cursor: pointer;
+    }
+    #helpClose:hover { color: #fff; }
+    #helpBtn {
+      background: #0f3460; border: 1px solid #334; color: #888;
+      border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 0.82em;
+      margin-left: 10px; vertical-align: middle;
+    }
+    #helpBtn:hover { border-color: #4ecdc4; color: #4ecdc4; }
+  </style>
+</head>
+<body>
+  <h1>⚔️ DPS 試算工具 <button id="helpBtn">❓ 說明</button></h1>
+
+  <div class="controls">
+    <span style="color:#ffd700;font-weight:bold;font-size:0.9em;">標準敵人</span>
+    <label>HP <input type="number" id="enemyHP" value="500" min="1" step="100"></label>
+    <label>護甲% <input type="number" id="enemyArmor" value="0" min="0" max="90" step="5"></label>
+  </div>
+
+  <div class="filters">
+    <span class="filter-label">等級：</span>
+    <button class="filter-btn active" data-lv="all">全部</button>
+    <button class="filter-btn" data-lv="1">Lv1</button>
+    <button class="filter-btn" data-lv="2">Lv2</button>
+    <button class="filter-btn" data-lv="3">Lv3</button>
+    <button class="filter-btn" data-lv="4">Lv4</button>
+    <button class="filter-btn" data-lv="5">Lv5</button>
+    <button class="filter-btn" data-lv="6">Lv6</button>
+    <div class="filter-sep"></div>
+    <span class="filter-label">元素：</span>
+    <button class="filter-btn active" data-elem="all">全部</button>
+    <button class="filter-btn" data-elem="fire">🔥</button>
+    <button class="filter-btn" data-elem="water">💧</button>
+    <button class="filter-btn" data-elem="earth">⛰️</button>
+    <button class="filter-btn" data-elem="wind">🌪️</button>
+    <button class="filter-btn" data-elem="thunder">⚡</button>
+    <button class="filter-btn" data-elem="none">⬜</button>
+  </div>
+
+  <details id="weightPanel">
+    <summary>⚙️ 評分權重（展開調整）</summary>
+    <div class="wg-wrap" id="weightGrid"></div>
+  </details>
+
+  <div style="margin:8px 0;display:flex;gap:8px;align-items:center">
+    <button id="exportAdj" style="background:#333;color:#ccc;border:1px solid #555;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:0.85em">📋 匯出 adj 差異</button>
+    <button id="resetAdj" style="background:#333;color:#ccc;border:1px solid #555;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:0.85em">↺ 重置 adj</button>
+    <span id="adjStatus" style="color:#ff9944;font-size:0.8em"></span>
+  </div>
+
+  <p class="summary" id="summary"></p>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="no-sort">#</th>
+        <th class="no-sort">塔</th>
+        <th data-sort="dps">DPS</th>
+        <th data-sort="edps">eDPS</th>
+        <th data-sort="cost">成本</th>
+        <th data-sort="ratio">eDPS/g</th>
+        <th data-sort="effective">Score</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+
+  <script>
+    // ──────────────────────────────────────────
+    // Collect all towers into flat list
+    // ──────────────────────────────────────────
+    function getAllTowers() {
+      const list = [];
+
+      // Basic Lv1-2
+      for (const [key, tower] of Object.entries(BASIC_TOWERS)) {
+        tower.levels.forEach(function(lvl, i) {
+          if (!lvl) return;
+          list.push(Object.assign({ id: 'basic_' + key + '_' + i, name: tower.name, icon: tower.icon, elem: null, elems: [], lv: i + 1 }, lvl));
+        });
+      }
+
+      // Elem Base Lv3
+      for (const [elemKey, bases] of Object.entries(ELEM_BASE)) {
+        for (const [baseKey, t] of Object.entries(bases)) {
+          list.push(Object.assign({ id: 'eb_' + elemKey + '_' + baseKey, lv: 3, elem: elemKey, elems: [elemKey] }, t));
+        }
+      }
+
+      // Infusions Lv4
+      for (const [base, infusions] of Object.entries(INFUSIONS)) {
+        for (const [inj, tower] of Object.entries(infusions)) {
+          const lv4 = tower.lv4;
+          list.push(Object.assign({ id: 'inf_' + base + '_' + inj, name: tower.name, icon: tower.icon, lv: 4, elem: base, elems: [base, inj] }, lv4));
+        }
+      }
+
+      // Triple Lv5
+      for (const [key, tower] of Object.entries(TRIPLE_TOWERS)) {
+        const lv5 = tower.lv5;
+        const elems = key.split('_');
+        list.push(Object.assign({ id: 'tri_' + key, name: tower.name, icon: tower.icon, lv: 5, elem: elems[0], elems: elems }, lv5));
+      }
+
+      // Pure Lv6
+      for (const [elemKey, tower] of Object.entries(PURE_TOWERS)) {
+        const lv6 = tower.lv6;
+        list.push(Object.assign({ id: 'pure_' + elemKey, name: tower.name, icon: tower.icon, lv: 6, elem: elemKey, elems: [elemKey] }, lv6));
+      }
+
+      return list;
+    }
+
+    // ──────────────────────────────────────────
+    // DPS Calculation
+    // ──────────────────────────────────────────
+    function calcEffectiveDPS(t, enemyHP, enemyArmor) {
+      const dmg = t.damage;
+      const spd = t.atkSpd;
+      const aoe = t.aoe || 0;
+      const skills = t.skills || [];
+
+      const baseDPS = dmg * spd;
+      const armorMult = Math.max(0.1, 1 - enemyArmor / 100);
+      const aoeTargets = aoe > 0 ? 1 + 2 * aoe : 1;
+
+      let skillMult = 1.0;
+      let addDPS = 0;
+
+      for (const skill of skills) {
+        if (!skill.enabled) continue;
+        const def = SKILL_DEFS[skill.type];
+        if (!def) continue;
+        const p = Object.assign({}, def.defaults, skill.params);
+
+        switch (skill.type) {
+          case 'burn': {
+            const dot = getParam(t.id, 'burn', 'dot', p.dot);
+            const dur = getParam(t.id, 'burn', 'dur', p.dur);
+            addDPS += dot * dmg * Math.min(dur || 3, 3) * spd * armorMult;
+            break;
+          }
+          case 'ignite': {
+            const flat = getParam(t.id, 'ignite', 'flat', p.flat);
+            addDPS += flat * dmg * spd * 0.5 * armorMult;
+            break;
+          }
+          case 'detonate': {
+            const ratio = getParam(t.id, 'detonate', 'ratio', p.ratio);
+            addDPS += ratio * dmg * spd * 0.3; // true dmg
+            break;
+          }
+          case 'chill':
+            skillMult *= 1.25;
+            break;
+          case 'freeze':
+            skillMult *= 1.05;
+            break;
+          case 'shred':
+            skillMult *= 1.15;
+            break;
+          case 'vulnerability': {
+            const cap = getParam(t.id, 'vulnerability', 'cap', p.cap);
+            skillMult *= (1 + (cap || 0.5));
+            break;
+          }
+          case 'chain': {
+            const targets = getParam(t.id, 'chain', 'targets', p.targets);
+            const decay = getParam(t.id, 'chain', 'decay', p.decay);
+            skillMult *= (1 + targets * decay);
+            break;
+          }
+          case 'hpPct': {
+            const pct = getParam(t.id, 'hpPct', 'pct', p.pct);
+            const every = getParam(t.id, 'hpPct', 'every', p.every);
+            const capVal = getParam(t.id, 'hpPct', 'cap', p.cap);
+            const hpDmgPerProc = capVal ? Math.min(pct * enemyHP, capVal) : pct * enemyHP;
+            addDPS += hpDmgPerProc * spd / (every || 3);
+            break;
+          }
+          case 'ramp': {
+            const cap = getParam(t.id, 'ramp', 'cap', p.cap);
+            skillMult *= (1 + (cap || 0.5) / 2);
+            break;
+          }
+          case 'pierce':
+            skillMult *= 1.10;
+            break;
+          case 'multishot': {
+            const count = getParam(t.id, 'multishot', 'count', p.count) || getParam(t.id, 'multishot', 'shots', p.shots) || 2;
+            skillMult *= count;
+            break;
+          }
+          case 'execute':
+            skillMult *= 1.10;
+            break;
+          case 'zone':
+            skillMult *= 1.15;
+            break;
+          case 'warp':
+            skillMult *= 1.05;
+            break;
+          case 'knockback':
+            skillMult *= 1.10;
+            break;
+          case 'permaBuff':
+            skillMult *= 1.05;
+            break;
+          // aura_*, lifedrain, killGold, unstable: 不計入自身 DPS
+        }
+      }
+
+      const effectiveDPS = (baseDPS * armorMult * skillMult + addDPS) * aoeTargets;
+      return {
+        dps: Math.round(baseDPS * armorMult),
+        edps: Math.round(effectiveDPS),
+      };
+    }
+
+    // ──────────────────────────────────────────
+    // State
+    // ──────────────────────────────────────────
+    const allTowers = getAllTowers();
+    let sortKey = 'edps';
+    let sortDesc = true;
+    let filterLv = 'all';
+    let filterElem = 'all';
+
+    // 使用者覆蓋的技能參數（key = towerId + '_' + skillType + '_' + paramKey）
+    const overrideParams = {};
+
+    // 評分公式權重（可在 UI 調整）
+    const SCORE_WEIGHT_DEFAULTS = {
+      dpsScaleConst: 2.841, aoeScoreMod: 0.7,
+      // ← 主要調整點：各等級有效分目標（需同步 skill-editor.html 的 LEVEL_SCORE_STD 換算比例）
+      lv1Target: 56, lv2Target: 127, lv3Target: 227, lv4Target: 410, lv5Target: 717, lv6Target: 1127,
+      lv4Tolerance: 15,
+      burn: 150, ignite: 80, detonate: 35, shred: 90, pierce: 150,
+      chill: 50, freeze: 40, warp_ratio: 80, warp_base: 10,
+      vulnerability: 70, execute: 20, knockback: 8,
+      hpPct_norm: 1500, hpPct_boss: 7000,
+      ramp: 60, chain: 50,
+      zone: 50, killGold: 4, permaBuff: 55, unstable: 8,
+      aura_dmg: 350, aura_range: 60, aura_atkSpd: 350,
+    };
+    const scoreWeights = Object.assign({}, SCORE_WEIGHT_DEFAULTS);
+
+    // 使用者覆蓋的 score_adj（key = towerId, value = number）
+    const overrideAdj = {};
+
+    function showToast(msg) {
+      let t = document.getElementById('adjToast');
+      if (!t) {
+        t = document.createElement('div');
+        t.id = 'adjToast';
+        t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 18px;border-radius:6px;font-size:0.85em;z-index:999;pointer-events:none;transition:opacity 0.4s';
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.opacity = '1';
+      clearTimeout(t._tid);
+      t._tid = setTimeout(function() { t.style.opacity = '0'; }, 2000);
+    }
+
+    function getParam(towerId, skillType, paramKey, defaultVal) {
+      const key = towerId + '_' + skillType + '_' + paramKey;
+      return key in overrideParams ? overrideParams[key] : defaultVal;
+    }
+
+    function getEnemyParams() {
+      return {
+        hp: parseInt(document.getElementById('enemyHP').value) || 500,
+        armor: parseFloat(document.getElementById('enemyArmor').value) || 0,
+      };
+    }
+
+    // ──────────────────────────────────────────
+    // Per-skill eDPS contribution
+    // ──────────────────────────────────────────
+    function calcSkillContrib(t, skill, enemy) {
+      if (!skill.enabled) return 0;
+      const def = SKILL_DEFS[skill.type];
+      if (!def) return 0;
+      const p = Object.assign({}, def.defaults, skill.params);
+      const dmg = t.damage;
+      const spd = t.atkSpd;
+      const aoe = t.aoe || 0;
+      const armorMult = Math.max(0.1, 1 - enemy.armor / 100);
+      const aoeTargets = aoe > 0 ? 1 + 2 * aoe : 1;
+      const baseDPS = dmg * spd * armorMult * aoeTargets;
+
+      switch (skill.type) {
+        case 'burn': {
+          const dot = getParam(t.id, 'burn', 'dot', p.dot);
+          const dur = getParam(t.id, 'burn', 'dur', p.dur);
+          return dot * dmg * Math.min(dur || 3, 3) * spd * armorMult * aoeTargets;
+        }
+        case 'ignite': {
+          const flat = getParam(t.id, 'ignite', 'flat', p.flat);
+          return flat * dmg * spd * 0.5 * armorMult * aoeTargets;
+        }
+        case 'detonate': {
+          const ratio = getParam(t.id, 'detonate', 'ratio', p.ratio);
+          return ratio * dmg * spd * 0.3 * aoeTargets;
+        }
+        case 'hpPct': {
+          const pct = getParam(t.id, 'hpPct', 'pct', p.pct);
+          const every = getParam(t.id, 'hpPct', 'every', p.every);
+          return pct * enemy.hp * spd / (every || 3) * aoeTargets;
+        }
+        case 'chill':   return baseDPS * 0.25;
+        case 'freeze':  return baseDPS * 0.05;
+        case 'shred':   return baseDPS * 0.15;
+        case 'vulnerability': {
+          const cap = getParam(t.id, 'vulnerability', 'cap', p.cap);
+          return baseDPS * (cap || 0.5);
+        }
+        case 'chain': {
+          const targets = getParam(t.id, 'chain', 'targets', p.targets);
+          const decay = getParam(t.id, 'chain', 'decay', p.decay);
+          return baseDPS * targets * decay;
+        }
+        case 'ramp': {
+          const cap = getParam(t.id, 'ramp', 'cap', p.cap);
+          return baseDPS * ((cap || 0.5) / 2);
+        }
+        case 'pierce':   return baseDPS * 0.10;
+        case 'multishot': {
+          const count = getParam(t.id, 'multishot', 'count', p.count) || getParam(t.id, 'multishot', 'shots', p.shots) || 2;
+          return baseDPS * (count - 1);
+        }
+        case 'execute':  return baseDPS * 0.10;
+        case 'zone':     return baseDPS * 0.15;
+        case 'warp':     return baseDPS * 0.05;
+        case 'knockback': return baseDPS * 0.10;
+        case 'permaBuff': return baseDPS * 0.05;
+        default: return 0;
+      }
+    }
+
+    // ──────────────────────────────────────────
+    // Tower Score Calculation
+    // ──────────────────────────────────────────
+    function getLvRange(lv) {
+      const key = 'lv' + lv + 'Target';
+      const t = scoreWeights[key] || scoreWeights.lv4Target;
+      const tol = scoreWeights.lv4Tolerance / 100;
+      return { lo: Math.round(t * (1 - tol)), hi: Math.round(t * (1 + tol)) };
+    }
+    function calcTowerScore(t) {
+      const W = scoreWeights;
+      const aoeMod = 1 + (t.aoe || 0) * W.aoeScoreMod;
+      const dpsScore = (t.damage || 0) * (t.atkSpd || 0) * ((t.range || 3) / 3.0) * aoeMod * W.dpsScaleConst;
+      let es = 0;
+      (t.skills || []).forEach(function(skill) {
+        const def = SKILL_DEFS[skill.type];
+        if (!def) return;
+        const p = Object.assign({}, def.defaults, skill.params);
+        switch (skill.type) {
+          case 'burn':         es += (p.dot || 0) * W.burn * aoeMod; break;
+          case 'ignite':       es += (p.flat || 0) * W.ignite; break;
+          case 'detonate':     es += (p.ratio || 0) * W.detonate * aoeMod; break;
+          case 'shred':        es += (p.cap || 0) * W.shred * aoeMod; break;
+          case 'chill':        es += Math.min((p.perStack || 0) * (p.cap || 0), 1.0) * W.chill * aoeMod; break;
+          case 'freeze':       es += (p.dur || 0) * W.freeze * aoeMod; break;
+          case 'warp':         es += ((p.dur || 0) / (p.cd || 1) * W.warp_ratio + W.warp_base) * aoeMod; break;
+          case 'vulnerability':es += (p.cap || 0) * W.vulnerability * aoeMod; break;
+          case 'execute':      es += (p.threshold || 0) * (p.mult || 0) * W.execute; break;
+          case 'unstable':     es += W.unstable; break;
+          case 'knockback':    es += (p.dist || 0) * W.knockback * aoeMod; break;
+          case 'hpPct': {
+            const pct = p.pct || 0.03, every = p.every || 3, capV = p.cap;
+            const sNorm = pct / every * W.hpPct_norm;
+            const bossRaw = pct * W.hpPct_boss;
+            const bossDmg = capV ? Math.min(bossRaw, capV) : bossRaw;
+            const sBoss = Math.min(bossDmg / every * 1.5, (capV || 9999) / every * 1.5);
+            es += sNorm * 0.6 + sBoss * 0.4;
+            break;
+          }
+          case 'ramp':         es += (p.cap || 0) * W.ramp; break;
+          case 'chain':        es += (p.targets || 0) * (p.decay || 0) * W.chain; break;
+          case 'pierce':       es += (p.dmgUp || 0) * W.pierce; break;
+          case 'aura_dmg':   { const r = p.radius || 2; es += (p.pct || 0) * W.aura_dmg * (1 + r * 0.4); break; }
+          case 'aura_range': { const r = p.radius || 2; es += (p.bonus || 0) * W.aura_range * (1 + r * 0.4); break; }
+          case 'aura_atkSpd':{ const r = p.radius || 2; es += (p.bonus || 0) * W.aura_atkSpd * (1 + r * 0.4); break; }
+          case 'zone':         es += W.zone * aoeMod; break;
+          case 'killGold':     es += (p.bonus || 0) * W.killGold; break;
+          case 'permaBuff':    es += W.permaBuff; break;
+        }
+      });
+      const raw = dpsScore + es;
+      const origAdj = t.score_adj != null ? t.score_adj : 1.0;
+      const adj = (t.id in overrideAdj) ? overrideAdj[t.id] : origAdj;
+      const eff = raw * adj;
+      return { dpsScore: Math.round(dpsScore), effectScore: Math.round(es), rawTotal: Math.round(raw), scoreAdj: adj, effective: Math.round(eff) };
+    }
+
+    function scoreColor(eff, lv) {
+      if (lv < 1 || lv > 6) return '#aaa';
+      const r = getLvRange(lv);
+      if (eff >= r.lo && eff <= r.hi) return '#4ecdc4';
+      if (eff >= r.lo * 0.85 && eff <= r.hi * 1.15) return '#f0c040';
+      return '#ff5555';
+    }
+
+    // 展開行技能區塊（含可編輯 param inputs）
+    const AURA_TYPES = ['aura_dmg', 'aura_atkSpd', 'aura_range', 'lifedrain', 'killGold', 'unstable'];
+    function buildSkillParamsHTML(t, enemy) {
+      if (!t.skills || t.skills.length === 0) return '<span style="color:#666">（無技能）</span>';
+
+      return t.skills.map(function(skill) {
+        const def = SKILL_DEFS[skill.type];
+        if (!def) return '';
+        const p = Object.assign({}, def.defaults, skill.params);
+        const contrib = calcSkillContrib(t, skill, enemy);
+
+        const paramInputs = Object.keys(p).map(function(k) {
+          const overKey = t.id + '_' + skill.type + '_' + k;
+          const val = overKey in overrideParams ? overrideParams[overKey] : p[k];
+          const modified = overKey in overrideParams;
+          return '<label style="display:inline-flex;align-items:center;gap:3px;margin-right:6px">'
+            + '<span style="color:#888;font-size:0.8em">' + k + '</span>'
+            + '<input type="number" step="any" value="' + val + '"'
+            + ' data-tower="' + t.id + '" data-skill="' + skill.type + '" data-param="' + k + '"'
+            + ' class="param-input' + (modified ? ' param-modified' : '') + '">'
+            + '</label>';
+        }).join('');
+
+        const isAura = AURA_TYPES.indexOf(skill.type) >= 0;
+        const contribText = isAura
+          ? '<span style="color:#555;font-size:0.78em">（光環/特殊，不計入自身）</span>'
+          : '<b style="color:#ff6b35;font-size:0.88em">+' + Math.round(contrib) + ' eDPS</b>';
+
+        const resetBtn = '<button class="param-reset"'
+          + ' data-tower="' + t.id + '" data-skill="' + skill.type + '"'
+          + ' style="background:#0f3460;border:1px solid #444;color:#888;border-radius:3px;'
+          + 'padding:1px 6px;cursor:pointer;font-size:0.78em;margin-left:6px">↺</button>';
+
+        return '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;'
+          + 'margin-bottom:4px;padding:4px 0;border-bottom:1px solid #1a2a4a">'
+          + '<span style="color:#ccc;min-width:64px;font-size:0.88em">' + def.name + '</span>'
+          + paramInputs
+          + contribText
+          + resetBtn
+          + '</div>';
+      }).join('');
+    }
+
+    // ──────────────────────────────────────────
+    // Level badge style
+    // ──────────────────────────────────────────
+    const LV_COLORS = { 1: '#888', 2: '#aaa', 3: '#4ecdc4', 4: '#6677ff', 5: '#cc77ff', 6: '#ff6655' };
+
+    function lvBadge(lv) {
+      const c = LV_COLORS[lv] || '#fff';
+      return '<span class="lv-badge" style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '55">Lv' + lv + '</span>';
+    }
+
+    // ──────────────────────────────────────────
+    // Render
+    // ──────────────────────────────────────────
+    function render() {
+      const enemyHP    = parseInt(document.getElementById('enemyHP').value) || 500;
+      const enemyArmor = parseFloat(document.getElementById('enemyArmor').value) || 0;
+
+      // Calculate
+      let data = allTowers.map(function(t) {
+        const r = calcEffectiveDPS(t, enemyHP, enemyArmor);
+        const s = calcTowerScore(t);
+        return Object.assign({}, t, r, s, { ratio: t.cost > 0 ? r.edps / t.cost : 0 });
+      });
+
+      // Filter level
+      if (filterLv !== 'all') {
+        const lvNum = parseInt(filterLv);
+        data = data.filter(function(t) { return t.lv === lvNum; });
+      }
+
+      // Filter elem
+      if (filterElem !== 'all') {
+        data = data.filter(function(t) {
+          if (!t.elems || t.elems.length === 0) return false;
+          return t.elems.includes(filterElem);
+        });
+      }
+
+      // Sort
+      data.sort(function(a, b) {
+        const va = a[sortKey] || 0, vb = b[sortKey] || 0;
+        return sortDesc ? vb - va : va - vb;
+      });
+
+      // Render
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+
+      data.forEach(function(t, i) {
+        const brief = getSkillBrief(t.skills);
+
+        // Main row
+        const tr = document.createElement('tr');
+        tr.className = 'data-row';
+        tr.innerHTML =
+          '<td class="col-rank">' + (i + 1) + '</td>' +
+          '<td>' + t.icon + ' ' + t.name + lvBadge(t.lv) +
+            (brief ? '<span class="skill-brief">' + brief + '</span>' : '') +
+          '</td>' +
+          '<td class="col-dps">' + t.dps + '</td>' +
+          '<td class="col-edps">' + t.edps + '</td>' +
+          '<td class="col-cost">' + t.cost + 'g</td>' +
+          '<td class="col-ratio">' + t.ratio.toFixed(2) + '</td>' +
+          (function() {
+            if (t.lv < 3) return '<td style="color:#aaa">—</td>';
+            const origAdj = t.score_adj != null ? t.score_adj : 1.0;
+            const isOverride = t.id in overrideAdj;
+            const adjVal = isOverride ? overrideAdj[t.id] : origAdj;
+            const adjColor = isOverride ? '#ff9944' : '#666';
+            const adjStyle = isOverride ? 'color:#ff9944;text-decoration:underline dotted;cursor:pointer;font-size:0.8em;margin-left:4px'
+                                        : 'color:#666;cursor:pointer;font-size:0.8em;margin-left:4px';
+            return '<td style="color:' + scoreColor(t.effective, t.lv) + ';font-weight:bold">' +
+              '<span class="score-val">' + (t.effective || '—') + '</span>' +
+              '<span class="adj-badge" data-tower-id="' + t.id + '" data-orig-adj="' + origAdj + '" title="點擊編輯 score_adj" style="' + adjStyle + '">adj:' + adjVal + '</span>' +
+            '</td>';
+          })();
+
+        // Detail row
+        const dr = document.createElement('tr');
+        dr.className = 'detail-row';
+        const elemsStr = t.elems && t.elems.length
+          ? t.elems.map(function(e) { return ELEM[e] ? ELEM[e].icon + ' ' + ELEM[e].name : e; }).join(' + ')
+          : '—';
+        dr.innerHTML =
+          '<td colspan="7">' +
+            '<div class="detail-grid">' +
+              '<div class="detail-stats">' +
+                '<h3>' + t.icon + ' ' + t.name + ' Lv' + t.lv + '</h3>' +
+                '<p>ATK <b>' + t.damage + '</b> | 攻速 <b>' + t.atkSpd + '/s</b> | 射程 <b>' + t.range + '</b> | AOE <b>' + (t.aoe || 0) + '</b></p>' +
+                '<p>元素：' + elemsStr + '</p>' +
+                '<p>成本 <b>' + t.cost + 'g</b> | DPS <b>' + t.dps + '</b> | eDPS <b style="color:#ff6b35">' + t.edps + '</b> | eDPS/g <b style="color:#4ecdc4">' + t.ratio.toFixed(2) + '</b></p>' +
+                (t.lv >= 3 ? '<p>Score: DPS <b>' + t.dpsScore + '</b> + Effect <b>' + t.effectScore + '</b> = <b>' + t.rawTotal + '</b>' + (t.scoreAdj !== 1.0 ? ' × adj <b>' + t.scoreAdj + '</b>' : '') + ' = <b style="color:' + scoreColor(t.effective, t.lv) + '">' + t.effective + '</b> <span style="color:#666;font-size:0.8em">（Lv' + t.lv + ' 目標 ' + (scoreWeights['lv'+t.lv+'Target'] || '?') + '±' + scoreWeights.lv4Tolerance + '%）</span>' + '</p>' : '') +
+                '<p class="desc-text">' + (t.desc || '') + '</p>' +
+              '</div>' +
+              '<div class="detail-skills">' +
+                '<h3>技能 <span style="color:#666;font-weight:normal;font-size:0.8em">（修改後即時更新 eDPS）</span></h3>' +
+                buildSkillParamsHTML(t, { hp: enemyHP, armor: enemyArmor }) +
+              '</div>' +
+            '</div>' +
+          '</td>';
+
+        tr.addEventListener('click', function() {
+          const isOpen = dr.classList.contains('open');
+          document.querySelectorAll('.detail-row.open').forEach(function(r) { r.classList.remove('open'); });
+          if (!isOpen) dr.classList.add('open');
+        });
+
+        tbody.appendChild(tr);
+        tbody.appendChild(dr);
+      });
+
+      document.getElementById('summary').textContent =
+        '顯示 ' + data.length + ' 座塔 ｜ 敵人 HP ' + enemyHP + '，護甲 ' + enemyArmor + '%';
+      const adjStatusEl = document.getElementById('adjStatus');
+      if (adjStatusEl) {
+        const cnt = Object.keys(overrideAdj).length;
+        adjStatusEl.textContent = cnt > 0 ? '已修改 ' + cnt + ' 座塔的 adj' : '';
+      }
+    }
+
+    // ──────────────────────────────────────────
+    // Events
+    // ──────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function() {
+      ['enemyHP', 'enemyArmor'].forEach(function(id) {
+        document.getElementById(id).addEventListener('input', render);
+      });
+
+      document.querySelectorAll('[data-lv]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          document.querySelectorAll('[data-lv]').forEach(function(b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          filterLv = btn.dataset.lv;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-elem]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          document.querySelectorAll('[data-elem]').forEach(function(b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          filterElem = btn.dataset.elem;
+          render();
+        });
+      });
+
+      document.querySelectorAll('th[data-sort]').forEach(function(th) {
+        th.addEventListener('click', function() {
+          const key = th.dataset.sort;
+          if (sortKey === key) {
+            sortDesc = !sortDesc;
+          } else {
+            sortKey = key;
+            sortDesc = true;
+          }
+          document.querySelectorAll('th[data-sort]').forEach(function(t) {
+            t.classList.remove('sorted-asc', 'sorted-desc');
+          });
+          th.classList.add(sortDesc ? 'sorted-desc' : 'sorted-asc');
+          render();
+        });
+      });
+
+      // 技能 param 輸入框 — 即時更新
+      document.getElementById('tableBody').addEventListener('input', function(e) {
+        const el = e.target;
+        if (!el.dataset.tower) return;
+        const key = el.dataset.tower + '_' + el.dataset.skill + '_' + el.dataset.param;
+        const val = parseFloat(el.value);
+        if (!isNaN(val)) {
+          overrideParams[key] = val;
+          el.classList.add('param-modified');
+        }
+        render();
+      });
+
+      // 重置按鈕 — 清除該技能所有 override
+      document.getElementById('tableBody').addEventListener('click', function(e) {
+        const el = e.target;
+
+        // adj-badge inline 編輯
+        if (el.classList.contains('adj-badge')) {
+          e.stopPropagation();
+          const towerId = el.dataset.towerId;
+          const origAdj = parseFloat(el.dataset.origAdj);
+          const curVal = (towerId in overrideAdj) ? overrideAdj[towerId] : origAdj;
+          const inp = document.createElement('input');
+          inp.type = 'number'; inp.step = '0.01'; inp.min = '0.1'; inp.max = '3';
+          inp.value = curVal;
+          inp.style.cssText = 'width:55px;font-size:0.8em;background:#222;color:#fff;border:1px solid #ff9944;border-radius:3px;padding:1px 3px';
+          el.replaceWith(inp);
+          inp.focus(); inp.select();
+          function applyAdj() {
+            const v = parseFloat(inp.value);
+            if (!isNaN(v) && v > 0) {
+              if (Math.abs(v - origAdj) < 0.001) { delete overrideAdj[towerId]; }
+              else { overrideAdj[towerId] = Math.round(v * 1000) / 1000; }
+            }
+            render();
+          }
+          inp.addEventListener('blur', applyAdj);
+          inp.addEventListener('keydown', function(ev) {
+            if (ev.key === 'Enter') { inp.blur(); }
+            if (ev.key === 'Escape') { inp.removeEventListener('blur', applyAdj); render(); }
+          });
+          return;
+        }
+
+        if (!el.classList.contains('param-reset')) return;
+        e.stopPropagation();
+        const prefix = el.dataset.tower + '_' + el.dataset.skill + '_';
+        Object.keys(overrideParams).forEach(function(k) {
+          if (k.startsWith(prefix)) delete overrideParams[k];
+        });
+        render();
+      });
+
+      // ── Weight Panel 生成 ──────────────────────
+      const WEIGHT_COLS = [
+        { section: '基礎', items: [
+          { key: 'dpsScaleConst', label: 'DPS scale', step: '0.001' },
+          { key: 'aoeScoreMod',   label: 'AOE mod',   step: '0.05' },
+          { key: 'lv1Target',     label: 'Lv1 目標',  step: '5' },
+          { key: 'lv2Target',     label: 'Lv2 目標',  step: '5' },
+          { key: 'lv3Target',     label: 'Lv3 目標',  step: '10' },
+          { key: 'lv4Target',     label: 'Lv4 目標',  step: '10' },
+          { key: 'lv5Target',     label: 'Lv5 目標',  step: '10' },
+          { key: 'lv6Target',     label: 'Lv6 目標',  step: '10' },
+          { key: 'lv4Tolerance',  label: '容差 %',    step: '1' },
+        ]},
+        { section: '傷害技能', items: [
+          { key: 'burn',       label: 'burn',       step: '10' },
+          { key: 'ignite',     label: 'ignite',     step: '10' },
+          { key: 'detonate',   label: 'detonate',   step: '5' },
+          { key: 'shred',      label: 'shred',      step: '10' },
+          { key: 'pierce',     label: 'pierce',     step: '10' },
+          { key: 'ramp',       label: 'ramp',       step: '5' },
+          { key: 'chain',      label: 'chain',      step: '5' },
+          { key: 'hpPct_norm', label: 'hpPct norm', step: '100' },
+          { key: 'hpPct_boss', label: 'hpPct boss', step: '500' },
+          { key: 'killGold',   label: 'killGold',   step: '1' },
+        ]},
+        { section: 'CC / 輔助', items: [
+          { key: 'chill',         label: 'chill',         step: '5' },
+          { key: 'freeze',        label: 'freeze',        step: '5' },
+          { key: 'warp_ratio',    label: 'warp ratio',    step: '5' },
+          { key: 'warp_base',     label: 'warp base',     step: '2' },
+          { key: 'vulnerability', label: 'vulnerability', step: '5' },
+          { key: 'execute',       label: 'execute',       step: '2' },
+          { key: 'knockback',     label: 'knockback',     step: '1' },
+          { key: 'zone',          label: 'zone',          step: '5' },
+          { key: 'permaBuff',     label: 'permaBuff',     step: '5' },
+          { key: 'unstable',      label: 'unstable',      step: '1' },
+        ]},
+        { section: '光環', items: [
+          { key: 'aura_dmg',    label: 'aura dmg',    step: '25' },
+          { key: 'aura_range',  label: 'aura range',  step: '10' },
+          { key: 'aura_atkSpd', label: 'aura atkSpd', step: '25' },
+        ]},
+      ];
+      const grid = document.getElementById('weightGrid');
+      WEIGHT_COLS.forEach(function(col) {
+        const colDiv = document.createElement('div');
+        colDiv.className = 'wg-col';
+        colDiv.innerHTML = '<div class="wg-section">' + col.section + '</div>';
+        col.items.forEach(function(item) {
+          const row = document.createElement('div');
+          row.className = 'wg-row';
+          row.innerHTML = '<span class="wg-label">' + item.label + '</span>'
+            + '<input type="number" step="' + item.step + '" value="' + scoreWeights[item.key] + '"'
+            + ' class="wg-input" data-wkey="' + item.key + '">';
+          colDiv.appendChild(row);
+        });
+        grid.appendChild(colDiv);
+      });
+      const resetBtn = document.createElement('button');
+      resetBtn.id = 'resetWeights';
+      resetBtn.textContent = '↺ 重置預設';
+      const lastCol = grid.lastElementChild;
+      lastCol.appendChild(resetBtn);
+
+      grid.addEventListener('input', function(e) {
+        const el = e.target;
+        if (!el.dataset.wkey) return;
+        const val = parseFloat(el.value);
+        if (!isNaN(val)) {
+          scoreWeights[el.dataset.wkey] = val;
+          el.classList.toggle('modified', val !== SCORE_WEIGHT_DEFAULTS[el.dataset.wkey]);
+          render();
+        }
+      });
+      document.getElementById('resetWeights').addEventListener('click', function() {
+        Object.assign(scoreWeights, SCORE_WEIGHT_DEFAULTS);
+        grid.querySelectorAll('.wg-input').forEach(function(inp) {
+          inp.value = scoreWeights[inp.dataset.wkey];
+          inp.classList.remove('modified');
+        });
+        render();
+      });
+      // ── End Weight Panel ───────────────────────
+
+      // ── adj 匯出 / 重置 ────────────────────────
+      document.getElementById('exportAdj').addEventListener('click', function() {
+        const changed = Object.keys(overrideAdj).map(function(id) {
+          const t = allTowers.find(function(t) { return t.id === id; });
+          return "  // " + (t ? t.name : id) + "\n  '" + id + "': " + overrideAdj[id];
+        });
+        const text = changed.length === 0
+          ? '（沒有變更）'
+          : 'const ADJ_PATCH = {\n' + changed.join(',\n') + '\n};';
+        navigator.clipboard.writeText(text).then(function() {
+          showToast(changed.length === 0 ? '沒有變更' : '已複製 ' + changed.length + ' 筆差異到剪貼簿');
+        }).catch(function() {
+          showToast('複製失敗，請手動複製');
+        });
+      });
+
+      document.getElementById('resetAdj').addEventListener('click', function() {
+        const cnt = Object.keys(overrideAdj).length;
+        Object.keys(overrideAdj).forEach(function(k) { delete overrideAdj[k]; });
+        render();
+        if (cnt > 0) showToast('已重置 ' + cnt + ' 座塔的 adj');
+      });
+      // ── End adj ────────────────────────────────
+
+      // Help modal
+      document.getElementById('helpBtn').addEventListener('click', function() {
+        document.getElementById('helpModal').classList.add('open');
+      });
+      document.getElementById('helpClose').addEventListener('click', function() {
+        document.getElementById('helpModal').classList.remove('open');
+      });
+      document.getElementById('helpModal').addEventListener('click', function(e) {
+        if (e.target === this) this.classList.remove('open');
+      });
+
+      document.querySelector('th[data-sort="edps"]').classList.add('sorted-desc');
+      render();
+    });
+  </script>
+
+<div id="helpModal">
+  <div id="helpBox">
+    <button id="helpClose">✕</button>
+    <h2>⚔️ DPS 試算工具 — 使用說明</h2>
+
+    <h3>欄位定義</h3>
+    <table>
+      <tr><th>欄位</th><th>說明</th></tr>
+      <tr><td><b>DPS</b></td><td>純攻擊傷害：damage × atkSpd × armorMult（不含技能加成）</td></tr>
+      <tr><td><b>eDPS</b></td><td>有效 DPS：含技能加成 × AOE 目標數，為主要比較指標</td></tr>
+      <tr><td><b>eDPS/g</b></td><td>eDPS 除以建造成本，衡量性價比</td></tr>
+      <tr><td><b>Score</b></td><td>綜合評分，與等級目標比對判斷平衡性（Lv1-2 不顯示）</td></tr>
+    </table>
+
+    <h3>eDPS 計算公式</h3>
+    <p>
+      <code>baseDPS = damage × atkSpd</code><br>
+      <code>armorMult = max(0.1, 1 − armor%)</code><br>
+      <code>aoeTargets = aoe &gt; 0 ? 1 + 2×aoe : 1</code><br>
+      <code>eDPS = (baseDPS × armorMult × skillMult + addDPS) × aoeTargets</code>
+    </p>
+    <p>技能分兩類：<b>addDPS 型</b>（burn / ignite / detonate / hpPct）直接疊加額外傷害；<b>skillMult 型</b>（chill / shred / chain…）乘以倍率。</p>
+
+    <h3>各技能 eDPS 換算</h3>
+    <table>
+      <tr><th>技能</th><th>換算方式</th></tr>
+      <tr><td>burn</td><td>dot × dmg × min(dur,3) × spd × armorMult × aoeTargets</td></tr>
+      <tr><td>ignite</td><td>flat × dmg × spd × 0.5 × armorMult × aoeTargets</td></tr>
+      <tr><td>detonate</td><td>ratio × dmg × spd × 0.3 × aoeTargets（真實傷害）</td></tr>
+      <tr><td>hpPct</td><td>pct × enemyHP × spd / every × aoeTargets</td></tr>
+      <tr><td>chill</td><td>baseDPS × 0.25（減速等效傷害）</td></tr>
+      <tr><td>freeze</td><td>baseDPS × 0.05</td></tr>
+      <tr><td>shred</td><td>baseDPS × 0.15（護甲削減）</td></tr>
+      <tr><td>vulnerability</td><td>baseDPS × cap</td></tr>
+      <tr><td>chain</td><td>baseDPS × targets × decay</td></tr>
+      <tr><td>ramp</td><td>baseDPS × (cap/2)（平均增傷估算）</td></tr>
+      <tr><td>pierce</td><td>baseDPS × 0.10</td></tr>
+      <tr><td>multishot</td><td>baseDPS × (count−1)</td></tr>
+      <tr><td>execute</td><td>baseDPS × 0.10</td></tr>
+      <tr><td>zone</td><td>baseDPS × 0.15</td></tr>
+      <tr><td>warp</td><td>baseDPS × 0.05</td></tr>
+      <tr><td>knockback</td><td>baseDPS × 0.10</td></tr>
+      <tr><td>permaBuff</td><td>baseDPS × 0.05</td></tr>
+      <tr><td>aura_* / lifedrain / killGold / unstable</td><td>不計入自身 eDPS（光環/特殊，另計）</td></tr>
+    </table>
+
+    <h3>Score 計算公式</h3>
+    <p>
+      <code>dpsScore = damage × atkSpd × (range/3) × aoeMod × dpsScaleConst</code><br>
+      <code>aoeMod = 1 + aoe × aoeScoreMod</code><br>
+      <code>Score = (dpsScore + effectScore) × score_adj</code>
+    </p>
+    <p>effectScore 由各技能依「評分權重 panel」的係數換算（不同技能公式不同）。</p>
+
+    <h3>Score 顏色判斷</h3>
+    <table>
+      <tr><th>顏色</th><th>意義</th></tr>
+      <tr><td style="color:#4ecdc4">■ 青色</td><td>在 lvN_Target ± lv4Tolerance% 範圍內（平衡）</td></tr>
+      <tr><td style="color:#f0c040">■ 黃色</td><td>在 ±15% 緩衝區（略偏，可接受）</td></tr>
+      <tr><td style="color:#ff5555">■ 紅色</td><td>超出容差（過強或過弱，需調整）</td></tr>
+    </table>
+
+    <h3>score_adj 用途</h3>
+    <p>點擊 Score 欄的 <code>adj:x.x</code> 可即時微調係數（預設 1.0）。用於修正公式無法捕捉的設計意圖（如純輔助塔、特殊機制）。<br>
+    「📋 匯出 adj 差異」→ 複製 JS patch 格式 → 貼入 towers.js 對應塔的 <code>score_adj</code> 欄位永久儲存。</p>
+
+    <h3>評分權重 panel</h3>
+    <p>展開「⚙️ 評分權重」可調整 Score 公式的所有係數（dpsScaleConst、各等級目標值、各技能權重）。修改後即時重算全部 Score。「↺ 重置預設」還原所有係數至初始值。</p>
+
+    <h3>技能 param 即時修改</h3>
+    <p>點擊任一塔展開詳細資訊，可直接修改技能參數（如 <code>burn.dot</code>、<code>hpPct.pct</code>），修改後即時更新 eDPS。「↺」按鈕重置該技能的所有修改。參數以橘色顯示代表已被覆蓋。</p>
+  </div>
+</div>
+</body>
+</html>

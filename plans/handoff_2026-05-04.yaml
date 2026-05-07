@@ -1,0 +1,32 @@
+session_date: 2026-05-04
+project: tower-defense-prototype
+resume_trigger: "繼續塔防評分"
+
+summary: |
+  本次 session 完成 plan 狀態盤點與 tower-score-impl 全部執行。
+
+completed:
+  - 封存 3 個 plan：range-aura-fix, skill-audit, tower-score
+  - tower-score-impl step1：game.js hpPct cap（rawHpDmg / hpDmg）
+  - tower-score-impl step2：towers.js 全 17 個 hpPct 加 cap:120
+  - tower-score-impl step3：6 座塔降 DPS + 36 座 Lv4 加 score_adj
+  - tower-score-impl step4：dps-calc.html Score 欄位 + calcTowerScore()
+
+changed_files:
+  - js/game.js        # hpPct cap 判斷
+  - js/towers.js      # hpPct cap:120, score_adj, DPS 調整
+  - dps-calc.html     # Score 欄位, calcTowerScore, scoreColor
+
+active_plans: []
+
+next_steps:
+  - 瀏覽器開啟 index.html 測試 hpPct cap 效果（用雷系塔打 Boss）
+  - 瀏覽器開啟 dps-calc.html 確認 Score 欄位顯示
+  - 若數值不合預期，新建 plan 調整
+  - Phase 4：autotest D 組策略驗證
+
+key_values:
+  lv4_target_score: 410
+  score_acceptable_range: "348~472 (±15%)"
+  hpPct_cap: 120
+  formula: "DPS_score = dmg × spd × (range/3.0) × (1 + aoe×0.7) × 2.841"

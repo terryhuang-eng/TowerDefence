@@ -6,12 +6,12 @@
 const GLOBAL_CAPS = {
   slowPct: 0.8,  // 減速上限 75%
   chillPerStack: 0.005,
-  chillMaxStacks: 160,
-  chillDecayRate: 2.5,
+  chillMaxStacks: 120,
+  chillDecayRate: 15,
   atkSpdBonus: 2,  // 攻速加成上限 +100%
-  shredPerStack: 0.02,  // 每層 -2% 護甲穿透
-  shredMaxStacks: 37,  // 上限 37 層 = 74%
-  shredDecayRate: 1.5,  // 每秒 -1.5 層
+  shredPerStack: 0.005,  // 每層 -2% 護甲穿透
+  shredMaxStacks: 120,  // 上限 37 層 = 74%
+  shredDecayRate: 15,  // 每秒 -1.5 層
   vulnPerStack: 0.02,  // 每層 +2% 易傷
   vulnMaxStacks: 37,  // 上限 37 層
   vulnDecayRate: 1.5,  // 每秒 -1.5 層
@@ -31,33 +31,51 @@ const SKILL_DEFS = {
   chain       : { category: 'tower', group: 'damage', name: '連鎖', defaults: {targets:2,decay:0.7}, desc: '跳到鄰近 targets 個敵人，每跳 ×decay', scoreBase: 30, scorePrimary: 'targets', scoreRef: 2 },
   execute     : { category: 'tower', group: 'damage', name: '斬殺', defaults: {threshold:0.15,mult:2}, desc: 'HP < threshold 時傷害 ×mult', scoreBase: 20, scorePrimary: null, scoreRef: null },
   hpPct       : { category: 'tower', group: 'damage', name: '%HP傷害', defaults: {pct:0.03,every:3,cd:0.5}, desc: '每 every 次附加 pct% 最大HP傷害', scoreBase: 40, scorePrimary: 'pct', scoreRef: 0.03 },
-  frostbite   : { category: 'tower', group: 'damage', name: '凍傷', defaults: {dmgPct:0.02,dur:3}, desc: '命中時施加凍傷，持續 dur 秒，每秒造成目標 maxHP × dmgPct 的水系傷害（獨立於冰冷效果）', scoreBase: 30, scorePrimary: 'dmgPct', scoreRef: 0.02 },
+  frostbite   : { category: 'tower', group: 'damage', name: '凍傷', defaults: {dmgPct:0.02,dur:3}, desc: '⚠️ [廢棄] 功能與 hpPct 高度重疊，不再分配給純屬塔。命中施加凍傷，每秒 dmgPct×maxHP 水系傷害，持續 dur 秒。', scoreBase: 30, scorePrimary: 'dmgPct', scoreRef: 0.02 },
   lifedrain   : { category: 'tower', group: 'damage', name: '生命汲取', defaults: {pct:0.15}, desc: '傷害 pct% 回復基地 HP', scoreBase: 10, scorePrimary: 'pct', scoreRef: 0.15 },
 
   // ── 塔：控制類 ──
-  chill       : { category: 'tower', group: 'control', name: '冰冷', defaults: {stacksPerHit:1}, desc: '每次攻擊疊 stacksPerHit 層，全域每層 -2% 速度（上限 75%）', scoreBase: 2, scorePrimary: 'stacksPerHit', scoreRef: 1 },
+  chill       : { category: 'tower', group: 'control', name: '冰冷', defaults: {stacksPerHit:1}, desc: '每次攻擊疊 stacksPerHit 層，全域每層 -2% 速度（上限 75%）', scoreBase: 5, scorePrimary: 'stacksPerHit', scoreRef: 1 },
   freeze      : { category: 'tower', group: 'control', name: '冰凍', defaults: {dur:1,threshold:30}, desc: '冰冷達 threshold 層時定身 dur 秒', scoreBase: 40, scorePrimary: 'dur', scoreRef: 1 },
   warp        : { category: 'tower', group: 'control', name: '扭曲', defaults: {dur:1,cd:8}, desc: '定身 dur 秒，cd 秒冷卻', scoreBase: 35, scorePrimary: 'dur', scoreRef: 1 },
   knockback   : { category: 'tower', group: 'control', name: '擊退', defaults: {dist:0.5,cd:5}, desc: '擊退 dist 格', scoreBase: 15, scorePrimary: null, scoreRef: null },
 
   // ── 塔：弱化類 ──
-  shred       : { category: 'tower', group: 'debuff', name: '碎甲', defaults: {stacksPerHit:2}, desc: '每次攻擊疊 stacksPerHit 層，全域每層 -shredPerStack% 護甲（上限 shredMaxStacks 層，衰減 shredDecayRate 層/秒）', scoreBase: 25, scorePrimary: 'stacksPerHit', scoreRef: 1 },
+  shred       : { category: 'tower', group: 'debuff', name: '碎甲', defaults: {stacksPerHit:2}, desc: '每次攻擊疊 stacksPerHit 層，全域每層 -shredPerStack% 護甲（上限 shredMaxStacks 層，衰減 shredDecayRate 層/秒）', scoreBase: 20, scorePrimary: 'stacksPerHit', scoreRef: 1 },
   vulnerability: { category: 'tower', group: 'debuff', name: '易傷', defaults: {stacksPerHit:2}, desc: '每次攻擊疊 stacksPerHit 層，全域每層 +vulnPerStack% 易傷（上限 vulnMaxStacks 層）', scoreBase: 25, scorePrimary: 'stacksPerHit', scoreRef: 1 },
 
   // ── 塔：增益類 ──
-  ramp        : { category: 'tower', group: 'buff', name: '越攻越快', defaults: {perHit:0.03,cap:0.5}, desc: '連攻同目標攻速 +perHit，上限 +cap', scoreBase: 8, scorePrimary: 'cap', scoreRef: 0.5 },
+  ramp        : { category: 'tower', group: 'buff', name: '越攻越快', defaults: {perHit:0.03,cap:0.5,switchLoss:3}, desc: '連攻同目標攻速 +perHit，上限 +cap；切換目標時扣 switchLoss 層（非歸零）', scoreBase: 12, scorePrimary: 'cap', scoreRef: 0.5 },
   aura_dmg    : { category: 'tower', group: 'buff', name: '傷害光環', defaults: {radius:2,flat:0,pct:0.15}, desc: '範圍內友軍傷害 +flat 或 ×(1+pct)', scoreBase: 40, scorePrimary: 'pct', scoreRef: 0.15 },
   aura_atkSpd : { category: 'tower', group: 'buff', name: '攻速光環', defaults: {radius:2,bonus:0.2}, desc: '範圍內友軍攻速 +bonus（僅Lv6純風）', scoreBase: 35, scorePrimary: 'bonus', scoreRef: 0.2 },
   aura_range  : { category: 'tower', group: 'buff', name: '射程光環', defaults: {radius:2,bonus:0.5}, desc: '範圍內友軍射程 +bonus', scoreBase: 15, scorePrimary: 'bonus', scoreRef: 0.5 },
 
   // ── 塔：特殊類 ──
-  multishot   : { category: 'tower', group: 'special', name: '三連射', defaults: {every:3,shots:3,killBonus:0.5,killDur:3}, desc: '每 every 次射 shots 發+擊殺加速', scoreBase: 30, scorePrimary: null, scoreRef: null },
-  pierce      : { category: 'tower', group: 'special', name: '穿透', defaults: {dmgUp:0.15}, desc: '穿透全路徑，每穿 +dmgUp', scoreBase: 20, scorePrimary: 'dmgUp', scoreRef: 0.15 },
+  multishot   : { category: 'tower', group: 'special', name: '三連射', defaults: {every:3,shots:3,killBonus:0.5,killDur:3}, desc: '每 every 次射 shots 發+擊殺加速', scoreBase: 40, scorePrimary: null, scoreRef: null },
+  pierce      : { category: 'tower', group: 'special', name: '穿透', defaults: {dmgUp:0.15}, desc: '穿透全路徑，每穿 +dmgUp', scoreBase: 60, scorePrimary: 'dmgUp', scoreRef: 0.15 },
   zone_slow   : { category: 'tower', group: 'special', name: '減速領域', defaults: {radius:1.5,chillStacks:40}, desc: '命中後在目標位置留下圓圈（半徑 radius 格，持續 3 秒），圓圈內敵人冰冷層數維持在 chillStacks', scoreBase: 15, scorePrimary: 'chillStacks', scoreRef: 40, scoreFactors: [{"param":"radius","ref":1.5}] },
   zone_shred  : { category: 'tower', group: 'special', name: '碎甲領域', defaults: {radius:1.5,shredStacks:10}, desc: '命中後在目標位置留下圓圈（半徑 radius 格，持續 3 秒），圓圈內敵人碎甲層數維持在 shredStacks', scoreBase: 30, scorePrimary: 'shredStacks', scoreRef: 10, scoreFactors: [{"param":"radius","ref":1.5}] },
-  killGold    : { category: 'tower', group: 'special', name: '擊殺獎金', defaults: {bonus:0.15}, desc: '自身塔擊殺 +bonus 金幣', scoreBase: 5, scorePrimary: 'bonus', scoreRef: 0.15 },
+
+  // ── 塔：場效應類（field_*）——以塔為中心，對射程內所有敵人持續施加效果 ──
+  field_slow  : { category: 'tower', group: 'field', name: '範圍減速場',   defaults: {radius:2, chillStacks:40},             desc: '以塔為中心半徑 radius 格，範圍內所有敵人持續維持 chillStacks 層冰冷。離開後自然衰退。',              scoreBase: 25, scorePrimary: 'chillStacks', scoreRef: 40 },
+  field_shred : { category: 'tower', group: 'field', name: '範圍碎甲場',   defaults: {radius:2, shredStacks:15},             desc: '以塔為中心半徑 radius 格，範圍內所有敵人持續維持 shredStacks 層碎甲。',                          scoreBase: 35, scorePrimary: 'shredStacks', scoreRef: 15 },
+  field_vuln  : { category: 'tower', group: 'field', name: '範圍易傷場',   defaults: {radius:2, vulnStacks:10},              desc: '以塔為中心半徑 radius 格，範圍內所有敵人持續維持 vulnStacks 層易傷。',                           scoreBase: 35, scorePrimary: 'vulnStacks',  scoreRef: 10 },
+  field_stun  : { category: 'tower', group: 'field', name: '範圍暈眩脈衝', defaults: {radius:2, dur:0.8, cd:6},              desc: '每 cd 秒對塔周圍 radius 格內所有敵人暈眩 dur 秒。',                                              scoreBase: 50, scorePrimary: 'dur',         scoreRef: 0.8 },
+  field_burn  : { category: 'tower', group: 'field', name: '範圍灼燒場',   defaults: {radius:2, dot:0.2, dur:3, interval:1}, desc: '每 interval 秒對塔周圍 radius 格內所有敵人施加/覆寫灼燒（dot×DPS，持續 dur 秒）。',             scoreBase: 30, scorePrimary: 'dot',         scoreRef: 0.2 },
+  field_dmg   : { category: 'tower', group: 'field', name: '範圍傷害脈衝', defaults: {radius:2, flat:0.5, cd:2},             desc: '每 cd 秒對塔周圍 radius 格內所有敵人造成 flat×ATK 傷害（吃護甲）。',                             scoreBase: 40, scorePrimary: 'flat',         scoreRef: 0.5 },
+
+  // ── 塔：攻速同步型（cycle_*）——每次攻擊冷卻完成且有目標時，對範圍內所有敵人施加效果 ──
+  cycle_stun  : { category: 'tower', group: 'cycle', name: '攻速暈眩', defaults: {radius:2, dur:0.6},            desc: '每次攻擊時，塔周圍 radius 格內所有敵人暈眩 dur 秒（dur 上限 2.0s）。需有攻擊目標才觸發。', scoreBase: 45, scorePrimary: 'dur',            scoreRef: 0.6 },
+  cycle_chill : { category: 'tower', group: 'cycle', name: '攻速冰冷', defaults: {radius:2, stacksPerCycle:5},   desc: '每次攻擊時，塔周圍 radius 格內所有敵人疊 stacksPerCycle 層冰冷。',                         scoreBase: 20, scorePrimary: 'stacksPerCycle', scoreRef: 5 },
+  cycle_shred : { category: 'tower', group: 'cycle', name: '攻速碎甲', defaults: {radius:2, stacksPerCycle:3},   desc: '每次攻擊時，塔周圍 radius 格內所有敵人疊 stacksPerCycle 層碎甲。',                         scoreBase: 25, scorePrimary: 'stacksPerCycle', scoreRef: 3 },
+  cycle_vuln  : { category: 'tower', group: 'cycle', name: '攻速易傷', defaults: {radius:2, stacksPerCycle:2},   desc: '每次攻擊時，塔周圍 radius 格內所有敵人疊 stacksPerCycle 層易傷。',                         scoreBase: 25, scorePrimary: 'stacksPerCycle', scoreRef: 2 },
+  cycle_burn  : { category: 'tower', group: 'cycle', name: '攻速灼燒', defaults: {radius:2, dot:0.2, dur:3},     desc: '每次攻擊時，塔周圍 radius 格內所有敵人施加/覆寫灼燒（dot×DPS，持續 dur 秒）。',             scoreBase: 28, scorePrimary: 'dot',            scoreRef: 0.2 },
+
+  killGold    : { category: 'tower', group: 'special', name: '擊殺獎金', defaults: {bonus:0.15}, desc: '自身塔擊殺 +bonus 金幣', scoreBase: 20, scorePrimary: 'bonus', scoreRef: 0.15 },
   unstable    : { category: 'tower', group: 'special', name: '不穩定', defaults: {variance:0.3}, desc: '傷害隨機 ±variance', scoreBase: -5, scorePrimary: null, scoreRef: null },
   permaBuff   : { category: 'tower', group: 'special', name: '永久強化', defaults: {atkPerKill:0.5}, desc: '每擊殺 +atkPerKill 攻擊力', scoreBase: 30, scorePrimary: null, scoreRef: null },
+  wealthScale : { category: 'tower', group: 'special', name: '財富積累', defaults: {divisor:20,cap:50}, desc: '持有每 divisor g = +1 傷害，上限 +cap（即時讀取，花錢則下降）', scoreBase: 0, scorePrimary: null, scoreRef: null },
+  interest    : { category: 'tower', group: 'special', name: '利息', defaults: {rate:0.05,cap:40}, desc: '每波結算時依持有金幣給予 rate×100% 金幣，上限 cap g（直接加金，非永久收入）', scoreBase: 0, scorePrimary: null, scoreRef: null },
 
   // ── 敵人/送兵技能 ──
   regen       : { category: 'enemy', group: 'passive', name: '再生', defaults: {pct:0.02}, desc: '每秒回復 pct% 最大HP', scoreBase: 0, scorePrimary: null, scoreRef: null },
@@ -126,17 +144,32 @@ function getSkillDesc(skills) {
       case 'knockback': return '💨 擊退：' + p.dist + ' 格（' + p.cd + 's CD）';
       case 'shred':    return `🔩 碎甲：每攻 +${p.stacksPerHit} 層（全域每層 -${GLOBAL_CAPS.shredPerStack * 100}%，衰減 ${GLOBAL_CAPS.shredDecayRate}/s）`;
       case 'vulnerability': return `💔 易傷：每攻 +${p.stacksPerHit} 層（全域每層 +${GLOBAL_CAPS.vulnPerStack * 100}%，衰減 ${GLOBAL_CAPS.vulnDecayRate}/s）`;
-      case 'ramp':     return '⚡ 越攻越快：每攻 +' + Math.round(p.perHit * 100) + '% 攻速（上限 +' + Math.round(p.cap * 100) + '%）';
+      case 'ramp':     return `⚡ 越攻越快：連攻同一目標每次 +${p.perHit} 攻速（上限 +${p.cap}）；切換目標扣 ${p.switchLoss} 層，不歸零`;
+      case 'frostbite': return `⚠️ [廢棄] 凍傷：每秒 ${(p.dmgPct*100).toFixed(1)}% maxHP 水系傷害，持續 ${p.dur}s。不再用於純屬塔。`;
       case 'aura_dmg': return '🔴 傷害光環：' + (p.flat ? '+' + p.flat + ' 定值' : '') + (p.flat && p.pct ? ' + ' : '') + (p.pct ? '+' + Math.round(p.pct * 100) + '%' : '') + '（半徑 ' + p.radius + '）';
       case 'aura_atkSpd': return '🟡 攻速光環：+' + Math.round(p.bonus * 100) + '%（半徑 ' + p.radius + '）';
       case 'aura_range': return '🟢 射程光環：+' + p.bonus + '（半徑 ' + p.radius + '）';
       case 'multishot': return '🌪️ 三連射：每 ' + p.every + ' 次射 ' + p.shots + ' 發 + 擊殺加速 ' + Math.round(p.killBonus * 100) + '%/' + p.killDur + 's';
+      case 'multiArrow': return `🏹 多重箭：同時射 ${p.shots} 支，副目標各 ${Math.round(p.ratio * 100)}% 傷害`;
       case 'pierce':   return '🌪️ 穿透：每穿 +' + Math.round(p.dmgUp * 100) + '%';
       case 'zone_slow':  return '🔵 減速領域：半徑 ' + p.radius + '，冰冷 ' + p.chillStacks + ' 層';
       case 'zone_shred': return '🟤 碎甲領域：半徑 ' + p.radius + '，碎甲 ' + p.shredStacks + ' 層';
+      case 'field_slow':  return '🌀 範圍減速場：半徑 ' + p.radius + ' 格，維持 ' + p.chillStacks + ' 層冰冷';
+      case 'field_shred': return '🟤 範圍碎甲場：半徑 ' + p.radius + ' 格，維持 ' + p.shredStacks + ' 層碎甲';
+      case 'field_vuln':  return '🟣 範圍易傷場：半徑 ' + p.radius + ' 格，維持 ' + p.vulnStacks + ' 層易傷';
+      case 'field_stun':  return '⚡ 範圍暈眩：半徑 ' + p.radius + ' 格，每 ' + p.cd + 's 暈眩 ' + p.dur + 's';
+      case 'field_burn':  return '🔥 範圍灼燒：半徑 ' + p.radius + ' 格，每 ' + p.interval + 's 施加灼燒 ' + Math.round(p.dot*100) + '% ATK × ' + p.dur + 's';
+      case 'field_dmg':   return '💥 範圍傷害：半徑 ' + p.radius + ' 格，每 ' + p.cd + 's 造成 ' + Math.round(p.flat*100) + '% ATK';
+      case 'cycle_stun':  return '⚡ 攻速暈眩：半徑 ' + p.radius + ' 格，每次攻擊暈眩 ' + p.dur + 's';
+      case 'cycle_chill': return '❄️ 攻速冰冷：半徑 ' + p.radius + ' 格，每次攻擊 +' + p.stacksPerCycle + ' 層冰冷';
+      case 'cycle_shred': return '🔩 攻速碎甲：半徑 ' + p.radius + ' 格，每次攻擊 +' + p.stacksPerCycle + ' 層碎甲';
+      case 'cycle_vuln':  return '💔 攻速易傷：半徑 ' + p.radius + ' 格，每次攻擊 +' + p.stacksPerCycle + ' 層易傷';
+      case 'cycle_burn':  return '🔥 攻速灼燒：半徑 ' + p.radius + ' 格，每次攻擊施加灼燒 ' + Math.round(p.dot*100) + '% ATK × ' + p.dur + 's';
       case 'killGold': return '💰 擊殺獎金：+' + Math.round(p.bonus * 100) + '%';
       case 'unstable': return '🎲 不穩定：傷害 ±' + Math.round(p.variance * 100) + '%';
       case 'permaBuff': return '⭐ 永久強化：每擊殺 +' + p.atkPerKill + ' ATK';
+      case 'wealthScale': return `💰 財富積累：持有每 ${p.divisor}g = +1 傷害（上限 +${p.cap}），花錢後傷害即時下降`;
+      case 'interest':    return `📈 利息：每波結算時獲得持有金幣 × ${(p.rate*100).toFixed(0)}%（上限 ${p.cap}g，直接加金）`;
       case 'regen':    return '♻️ 再生：每秒 ' + Math.round(p.pct * 100) + '% HP';
       case 'armorStack': return '🛡️ 護甲成長：+' + p.perHit + '/次（最多 +' + p.cap + '）';
       case 'enrage':   return '😡 狂暴：HP < ' + Math.round(p.hpThreshold * 100) + '% → 速度 ×' + p.spdMult;
@@ -181,12 +214,26 @@ function getSkillBrief(skills) {
       case 'aura_atkSpd': return '攻速光環+' + Math.round(p.bonus * 100) + '%';
       case 'aura_range': return '射程光環+' + p.bonus;
       case 'multishot': return p.every + '連射+擊殺加速';
+      case 'multiArrow': return `多重箭×${p.shots}`;
       case 'pierce':   return '穿透+' + Math.round(p.dmgUp * 100) + '%/體';
       case 'zone_slow':  return '減速領域r' + p.radius;
       case 'zone_shred': return '碎甲領域r' + p.radius;
+      case 'field_slow':  return '減速場 r' + p.radius;
+      case 'field_shred': return '碎甲場 r' + p.radius;
+      case 'field_vuln':  return '易傷場 r' + p.radius;
+      case 'field_stun':  return '暈眩脈衝 ' + p.dur + 's/cd' + p.cd;
+      case 'field_burn':  return '灼燒場 r' + p.radius;
+      case 'field_dmg':   return '傷害脈衝 r' + p.radius;
+      case 'cycle_stun':  return '攻速暈眩 ' + p.dur + 's';
+      case 'cycle_chill': return '攻速冰冷 ×' + p.stacksPerCycle;
+      case 'cycle_shred': return '攻速碎甲 ×' + p.stacksPerCycle;
+      case 'cycle_vuln':  return '攻速易傷 ×' + p.stacksPerCycle;
+      case 'cycle_burn':  return '攻速灼燒 r' + p.radius;
       case 'killGold': return '獎金+' + Math.round(p.bonus * 100) + '%';
       case 'unstable': return '不穩定±' + Math.round(p.variance * 100) + '%';
       case 'permaBuff': return '永強+' + p.atkPerKill;
+      case 'wealthScale': return `💰 財富積累`;
+      case 'interest':    return `📈 利息`;
       case 'regen':    return '再生' + Math.round(p.pct * 100) + '%';
       case 'armorStack': return '護甲+' + p.perHit;
       case 'enrage':   return '狂暴×' + p.spdMult;

@@ -115,6 +115,7 @@ const editData = {
 
 const fileHandles = {};
 let jsDirHandle = null;
+let seFileHandle = null; // skill-editor.html 自身的 FileHandle（用於寫回評分參數）
 const JS_DIR_FILES = { waves:'waves.js', sends:'sends.js', towers:'towers.js', config:'config.js', skills:'skills.js' };
 
 async function openJsDir() {
@@ -198,6 +199,42 @@ function updateRangeFactorK(val) {
   RANGE_FACTOR_K = parseFloat(val) || 0;
   renderPanel();
 }
+async function openSEHandle() {
+  if (!window.showOpenFilePicker) { showStatus('⚠️ 瀏覽器不支援 File System Access API'); return; }
+  try {
+    const [fh] = await window.showOpenFilePicker({
+      types: [{ description: 'HTML', accept: { 'text/html': ['.html'] } }],
+      multiple: false
+    });
+    seFileHandle = fh;
+    showStatus(`✅ 已選取 ${fh.name}，可使用 💾 寫回評分參數`);
+    renderScoreDefsPanel();
+  } catch (e) {
+    if (e.name !== 'AbortError') showStatus('⚠️ 選取失敗：' + e.message);
+  }
+}
+async function saveSEScoreParams() {
+  if (!seFileHandle) { showStatus('⚠️ 請先按 📂 選取 skill-editor.html'); return; }
+  try {
+    const file = await seFileHandle.getFile();
+    let content = await file.text();
+    const lvStd = LEVEL_SCORE_STD;
+    content = content.replace(
+      /^const LEVEL_SCORE_STD\s*=\s*\{[^}]+\};/m,
+      `const LEVEL_SCORE_STD = { lv1: ${lvStd.lv1}, lv2: ${lvStd.lv2}, lv3: ${lvStd.lv3}, lv4: ${lvStd.lv4}, lv5: ${lvStd.lv5}, lv6: ${lvStd.lv6} };`
+    );
+    content = content.replace(
+      /^let RANGE_FACTOR_K\s*=\s*[\d.]+;/m,
+      `let RANGE_FACTOR_K   = ${RANGE_FACTOR_K};`
+    );
+    const writable = await seFileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    showStatus('✅ 評分參數已寫回 skill-editor.html');
+  } catch (e) {
+    showStatus('⚠️ 寫入失敗：' + e.message);
+  }
+}
 
 function renderScoreDefsPanel() {
   const body = document.getElementById('score-defs-body');
@@ -268,6 +305,12 @@ function renderScoreDefsPanel() {
     style="width:56px;font-size:11px;background:#1a1a1a;color:#ccc;border:1px solid #444;padding:1px 3px"
     onchange="updateRangeFactorK(this.value)"></label>`;
   html += `<span style="font-size:10px;color:#888;margin-left:8px">range3=${(1+(3-4)*RANGE_FACTOR_K).toFixed(2)}× range4=1.00× range5=${(1+(5-4)*RANGE_FACTOR_K).toFixed(2)}×</span>`;
+  html += `</div>`;
+  const seLabel = seFileHandle ? `📄 ${seFileHandle.name}` : '未選取';
+  html += `<div style="margin-top:8px;border-top:1px solid #555;padding:6px 8px;display:flex;align-items:center;gap:6px">`;
+  html += `<span style="font-size:11px;color:#888">評分參數：${seLabel}</span>`;
+  html += `<button onclick="openSEHandle()" style="font-size:11px;padding:1px 6px" title="選取 skill-editor.html">📂</button>`;
+  html += `<button onclick="saveSEScoreParams()" style="font-size:11px;padding:1px 6px" title="將目前 LEVEL_SCORE_STD / RANGE_FACTOR_K 寫回 html">💾 儲存</button>`;
   html += `</div>`;
   body.innerHTML = html;
 }
@@ -944,7 +987,7 @@ function doExport(text, filename, mode) {
 // 分數分析
 // ← 主要調整點：修改下方數值即可改變各等級基準分（需同步更新 dps-calc.html）
 // ============================================================
-const LEVEL_SCORE_STD = { lv1: 20, lv2: 45, lv3: 80, lv4: 160, lv5: 280, lv6: 440 };
+const LEVEL_SCORE_STD = { lv1: 20, lv2: 45, lv3: 80, lv4: 140, lv5: 280, lv6: 440 };
 const ATKSPD_REF     = { lv3: 1.2, lv4: 1.2, lv5: 1.2, lv6: 1.5 };
 const AOE_DENSITY    = 0.5;
 let RANGE_FACTOR_K   = 0.2; // 每單位射程差的 DPS 分數增幅；基準 range=4，有效區間 3~5

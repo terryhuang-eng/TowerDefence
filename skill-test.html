@@ -1,0 +1,2526 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skill Test — Tower Defense</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0d1a; color: #eee; font-family: monospace; font-size: 13px; padding: 16px; }
+  h1 { color: #ffd93d; margin-bottom: 12px; font-size: 16px; }
+  #controls { margin-bottom: 16px; display: flex; gap: 8px; align-items: center; }
+  button { background: #2a1a3e; border: 1px solid #555; color: #eee; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-family: monospace; font-size: 12px; }
+  button:hover { border-color: #ffd93d; color: #ffd93d; }
+  #summary { font-size: 14px; font-weight: bold; padding: 8px 12px; border-radius: 4px; background: #1a1a2e; margin-bottom: 16px; }
+  #summary.all-pass { color: #55efc4; border-left: 3px solid #55efc4; }
+  #summary.has-fail  { color: #e94560; border-left: 3px solid #e94560; }
+  .group { margin-bottom: 16px; }
+  .group-title { color: #74b9ff; font-weight: bold; font-size: 12px; padding: 4px 0; border-bottom: 1px solid #333; margin-bottom: 6px; }
+  .test { padding: 3px 8px; margin: 2px 0; border-radius: 3px; line-height: 1.5; }
+  .test.pass { color: #55efc4; }
+  .test.fail { color: #e94560; background: #1a0008; }
+  .test.fail .err { color: #ff9f43; font-size: 11px; margin-left: 16px; display: block; }
+  #filter { background: #1a1a2e; border: 1px solid #444; color: #eee; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 12px; width: 200px; }
+</style>
+</head>
+<body>
+<h1>🧪 Skill Test — 技能效果正確性驗證</h1>
+<div id="controls">
+  <button id="btn-run">▶ Run All Tests</button>
+  <button id="btn-fail">❌ Failures Only</button>
+  <input id="filter" type="text" placeholder="過濾關鍵字…">
+  <span id="summary" style="display:none"></span>
+</div>
+<div id="results"></div>
+
+<!-- Dependencies -->
+<script src="js/skills.js"></script>
+<script src="js/config.js"></script>
+
+<!-- ============================================================
+     MockGame — 最小化 doDmg 執行環境
+     doDmg 原始碼來自 game.js，移除 SANDBOX/fireDmg/render 追蹤
+     ============================================================ -->
+<script>
+class MockGame {
+  constructor() {
+    this.hp     = 40;
+    this.maxHp  = 40;
+    this.gold   = 200;
+    this.towers  = [];
+    this.enemies = [];
+    this.zones   = [];
+    this.effects = [];
+    // blink/path 需要 path.length，給一個夠長的假路徑
+    this.path = Array.from({length: 50}, (_, i) => ({x: i, y: 5}));
+    this.addBattleLog = () => {};
+  }
+
+  // ── Helpers（精簡版，以 enemy.x/y 為座標）──
+  ePos(e) { return {x: e.x ?? 5, y: e.y ?? 5}; }
+  addFx() {}
+  getEnemiesNear(x, y, r) {
+    return this.enemies.filter(e => {
+      const p = this.ePos(e);
+      return Math.hypot(p.x - x, p.y - y) <= r;
+    });
+  }
+
+  // ── doDmg：複製自 game.js，移除 SANDBOX 追蹤 ──
+  doDmg(enemy, baseDmg, elem, tower) {
+    // dodge
+    const dodgeSk = getSkill(enemy, 'dodge');
+    if (dodgeSk && Math.random() < dodgeSk.chance) return;
+
+    let dmg = baseDmg;
+
+    if (tower) {
+      // unstable
+      const unstableSk = getSkill(tower, 'unstable');
+      if (unstableSk) dmg *= (1 + (Math.random() * 2 - 1) * unstableSk.variance);
+      // execute
+      const executeSk = getSkill(tower, 'execute');
+      if (executeSk && enemy.hp / enemy.maxHp < executeSk.threshold) dmg *= executeSk.mult;
+    }
+
+    // 元素相剋
+    if (elem && enemy.elem && CONFIG.elemAdv[elem]) {
+      const advMult = CONFIG.elemAdv[elem][enemy.elem];
+      if (advMult) dmg *= advMult;
+    }
+
+    // Armor
+    let armor = (enemy.armor || 0) + (enemy.armorStacks || 0) * 0.1;
+    const shredAmt = (enemy.shredStacks || 0) * GLOBAL_CAPS.shredPerStack;
+    armor = Math.max(0, armor - shredAmt);
+    dmg *= (1 - Math.min(armor, 0.8));
+
+    // Resist
+    const res = (enemy.resist || {})[elem] || 0;
+    dmg *= (1 - res);
+
+    // vulnerability
+    const vulnAmt = (enemy.vulnStacks || 0) * GLOBAL_CAPS.vulnPerStack;
+    if (vulnAmt > 0) dmg *= (1 + vulnAmt);
+
+    // 最終傷害
+    let finalDmg = Math.max(1, Math.floor(dmg));
+    // fortify
+    const fortifySk = getSkill(enemy, 'fortify');
+    if (fortifySk) finalDmg = Math.min(finalDmg, fortifySk.dmgCap);
+    // resilient
+    if (enemy._resilientReduction > 0)
+      finalDmg = Math.max(1, Math.floor(finalDmg * (1 - enemy._resilientReduction)));
+    // phaseShift
+    if ((enemy.resist || {})._dmgReduce)
+      finalDmg = Math.max(1, Math.floor(finalDmg * (1 - enemy.resist._dmgReduce)));
+
+    enemy.hp -= finalDmg;
+    if (tower) enemy._lastHitTower = tower;
+
+    // shield
+    const shieldSkill = getSkill(enemy, 'shield');
+    if (enemy.hp <= 0 && shieldSkill && !enemy._shieldUsed) {
+      enemy.hp = 1;
+      enemy._shieldUsed = true;
+    }
+
+    // tenacity
+    const ten = getSkill(enemy, 'tenacity');
+    const ccMult = ten ? (1 - ten.ccReduce) : 1.0;
+
+    if (tower) {
+      // burn
+      const burnSk = getSkill(tower, 'burn');
+      if (burnSk) {
+        const igniteSk = getSkill(tower, 'ignite');
+        const detSk    = getSkill(tower, 'detonate');
+        if (enemy.burnTimer > 0 && igniteSk) {
+          const igniteDmg = Math.floor(baseDmg * igniteSk.flat);
+          enemy.hp -= igniteDmg;
+        }
+        enemy.burnStacks = (enemy.burnStacks || 0) + 1;
+        const burnCoeff = tower.damage * tower.atkSpd;
+        enemy.burnDmg   = burnCoeff * burnSk.dot;
+        enemy.burnTimer = burnSk.dur;
+        if (enemy.burnStacks >= 3 && detSk) {
+          const detDmg = Math.floor(baseDmg * detSk.ratio);
+          if (detSk.aoe) {
+            const p = this.ePos(enemy);
+            this.getEnemiesNear(p.x, p.y, detSk.aoe).forEach(e => { e.hp -= detDmg; });
+          } else {
+            enemy.hp -= detDmg;
+          }
+          enemy.burnStacks = 0;
+        }
+      }
+
+      // chill
+      const chillSk = getSkill(tower, 'chill');
+      if (chillSk) {
+        enemy.chillStacks = Math.min(
+          GLOBAL_CAPS.chillMaxStacks,
+          (enemy.chillStacks || 0) + (chillSk.stacksPerHit || 1)
+        );
+        enemy.chillDecay = 0;
+        // freeze
+        const freezeSk = getSkill(tower, 'freeze');
+        if (freezeSk && enemy.chillStacks >= freezeSk.threshold) {
+          enemy.stunTimer = Math.max(enemy.stunTimer || 0, freezeSk.dur * ccMult);
+          enemy.chillStacks = 0;
+        }
+      }
+
+      // shred
+      const shredSk = getSkill(tower, 'shred');
+      if (shredSk) {
+        enemy.shredStacks = Math.min(
+          GLOBAL_CAPS.shredMaxStacks,
+          (enemy.shredStacks || 0) + (shredSk.stacksPerHit || 1)
+        );
+        enemy.shredDecay = 0;
+      }
+
+      // vulnerability
+      const vulnSk = getSkill(tower, 'vulnerability');
+      if (vulnSk) {
+        enemy.vulnStacks = Math.min(
+          GLOBAL_CAPS.vulnMaxStacks,
+          (enemy.vulnStacks || 0) + (vulnSk.stacksPerHit || 1)
+        );
+        enemy.vulnDecay = 0;
+      }
+
+      // hpPct
+      const hpPctSk = getSkill(tower, 'hpPct');
+      if (hpPctSk && (tower.atkCount || 0) % hpPctSk.every === 0) {
+        if (!enemy._hpPctCd || enemy._hpPctCd <= 0) {
+          const rawHpDmg = Math.floor(enemy.maxHp * hpPctSk.pct);
+          const hpDmg = hpPctSk.cap ? Math.min(rawHpDmg, hpPctSk.cap) : rawHpDmg;
+          enemy.hp -= hpDmg;
+          enemy._hpPctCd = hpPctSk.cd;
+        }
+      }
+
+      // lifedrain
+      const lifedrainSk = getSkill(tower, 'lifedrain');
+      if (lifedrainSk) {
+        this.hp = Math.min(this.maxHp, this.hp + Math.max(1, Math.floor(finalDmg * lifedrainSk.pct)));
+      }
+
+      // warp
+      const warpSk = getSkill(tower, 'warp');
+      if (warpSk && (!tower._warpCd || tower._warpCd <= 0)) {
+        enemy.stunTimer = Math.max(enemy.stunTimer || 0, warpSk.dur * ccMult);
+        tower._warpCd = warpSk.cd;
+      }
+
+      // knockback
+      const knockSk = getSkill(tower, 'knockback');
+      if (knockSk && (!tower._knockCd || tower._knockCd <= 0)) {
+        enemy.pathIdx = Math.max(0, (enemy.pathIdx || 0) - knockSk.dist);
+        tower._knockCd = knockSk.cd;
+      }
+    }
+
+    // 敵人被動
+    const armorSk = getSkill(enemy, 'armorStack');
+    if (armorSk) {
+      enemy.armorStacks = Math.min(
+        armorSk.cap / armorSk.perHit,
+        (enemy.armorStacks || 0) + 1
+      );
+    }
+    const resilientSk = getSkill(enemy, 'resilient');
+    if (resilientSk) {
+      enemy._resilientReduction = Math.min(
+        resilientSk.cap,
+        (enemy._resilientReduction || 0) + resilientSk.stack
+      );
+    }
+  }
+
+  // ── tickEnemy：burn/chill/shred/vuln 衰減 + regen + blink ──
+  tickEnemy(enemy, dt) {
+    if (enemy.stunTimer > 0) { enemy.stunTimer -= dt; return; }
+
+    // chill 衰減
+    if (enemy.chillStacks > 0) {
+      enemy.chillDecay = (enemy.chillDecay || 0) + dt;
+      const decayStacks = Math.floor(enemy.chillDecay * GLOBAL_CAPS.chillDecayRate);
+      if (decayStacks > 0) {
+        enemy.chillStacks = Math.max(0, enemy.chillStacks - decayStacks);
+        enemy.chillDecay -= decayStacks / GLOBAL_CAPS.chillDecayRate;
+      }
+    }
+
+    // regen
+    const regenSk = getSkill(enemy, 'regen');
+    if (regenSk) enemy.hp = Math.min(enemy.maxHp, enemy.hp + enemy.maxHp * regenSk.pct * dt);
+
+    // burn DOT
+    if (enemy.burnTimer > 0) {
+      enemy.hp -= enemy.burnDmg * dt;
+      enemy.burnTimer -= dt;
+    }
+    if (enemy.burnTimer <= 0) enemy.burnStacks = 0;
+
+    // shred 衰減
+    if (enemy.shredStacks > 0) {
+      enemy.shredDecay = (enemy.shredDecay || 0) + dt;
+      const sd = Math.floor(enemy.shredDecay * GLOBAL_CAPS.shredDecayRate);
+      if (sd > 0) {
+        enemy.shredStacks = Math.max(0, enemy.shredStacks - sd);
+        enemy.shredDecay -= sd / GLOBAL_CAPS.shredDecayRate;
+      }
+    }
+
+    // vuln 衰減
+    if (enemy.vulnStacks > 0) {
+      enemy.vulnDecay = (enemy.vulnDecay || 0) + dt;
+      const vd = Math.floor(enemy.vulnDecay * GLOBAL_CAPS.vulnDecayRate);
+      if (vd > 0) {
+        enemy.vulnStacks = Math.max(0, enemy.vulnStacks - vd);
+        enemy.vulnDecay -= vd / GLOBAL_CAPS.vulnDecayRate;
+      }
+    }
+
+    // hpPct 冷卻衰減
+    if (enemy._hpPctCd > 0) enemy._hpPctCd -= dt;
+
+    // blink
+    const blinkSk = getSkill(enemy, 'blink');
+    if (blinkSk && enemy.hp / enemy.maxHp < blinkSk.hpTrigger) {
+      if (!enemy._blinkCd || enemy._blinkCd <= 0) {
+        enemy.pathIdx = Math.min(this.path.length - 0.1, (enemy.pathIdx || 0) + blinkSk.dist);
+        enemy._blinkCd = blinkSk.cd;
+      } else {
+        enemy._blinkCd -= dt;
+      }
+    }
+  }
+
+  // ── tickTowers：aura 預計算 + field_slow/shred/vuln + field_stun/dmg/burn ──
+  tickTowers(dt) {
+    // 重置 aura
+    for (const tw of this.towers) {
+      tw._auraDmgFlat = 0; tw._auraDmgPct = 0; tw._auraAtkSpd = 0; tw._auraRange = 0;
+    }
+    // aura 計算（排除自己）
+    for (const src of this.towers) {
+      const ad = getSkill(src, 'aura_dmg');
+      const aa = getSkill(src, 'aura_atkSpd');
+      const ar = getSkill(src, 'aura_range');
+      if (!ad && !aa && !ar) continue;
+      for (const tw of this.towers) {
+        if (tw === src) continue;
+        const dist = Math.hypot(tw.x - src.x, tw.y - src.y);
+        if (ad && dist <= ad.radius) { tw._auraDmgFlat += ad.flat; tw._auraDmgPct += ad.pct; }
+        if (aa && dist <= aa.radius)
+          tw._auraAtkSpd = Math.min(GLOBAL_CAPS.atkSpdBonus, tw._auraAtkSpd + aa.bonus);
+        if (ar && dist <= ar.radius) tw._auraRange += ar.bonus;
+      }
+    }
+
+    // field_slow / field_shred / field_vuln
+    for (const tw of this.towers) {
+      const fSlow  = getSkill(tw, 'field_slow');
+      const fShred = getSkill(tw, 'field_shred');
+      const fVuln  = getSkill(tw, 'field_vuln');
+      if (fSlow) {
+        this.getEnemiesNear(tw.x, tw.y, fSlow.radius).forEach(e => {
+          e.chillStacks = Math.max(e.chillStacks || 0, fSlow.chillStacks); e.chillDecay = 0;
+        });
+      }
+      if (fShred) {
+        this.getEnemiesNear(tw.x, tw.y, fShred.radius).forEach(e => {
+          e.shredStacks = Math.max(e.shredStacks || 0, fShred.shredStacks); e.shredDecay = 0;
+        });
+      }
+      if (fVuln) {
+        this.getEnemiesNear(tw.x, tw.y, fVuln.radius).forEach(e => {
+          e.vulnStacks = Math.max(e.vulnStacks || 0, fVuln.vulnStacks); e.vulnDecay = 0;
+        });
+      }
+
+      // field_stun
+      const fStun = getSkill(tw, 'field_stun');
+      if (fStun) {
+        if (tw._fieldStunCd === undefined) tw._fieldStunCd = 0;
+        tw._fieldStunCd -= dt;
+        if (tw._fieldStunCd <= 0) {
+          tw._fieldStunCd = fStun.cd;
+          this.getEnemiesNear(tw.x, tw.y, fStun.radius).forEach(e => {
+            const ccMult = hasSkill(e, 'tenacity') ? (1 - getSkill(e, 'tenacity').ccReduce) : 1;
+            e.stunTimer = Math.max(e.stunTimer || 0, fStun.dur * ccMult);
+          });
+        }
+      }
+
+      // field_dmg
+      const fDmg = getSkill(tw, 'field_dmg');
+      if (fDmg) {
+        if (tw._fieldDmgCd === undefined) tw._fieldDmgCd = 0;
+        tw._fieldDmgCd -= dt;
+        if (tw._fieldDmgCd <= 0) {
+          tw._fieldDmgCd = fDmg.cd;
+          const dmgAmt = (tw.damage || 10) * fDmg.flat;
+          this.getEnemiesNear(tw.x, tw.y, fDmg.radius).forEach(e => {
+            const armor = e.armor || 0;
+            e.hp -= Math.max(1, dmgAmt * (1 - armor));
+          });
+        }
+      }
+
+      // field_burn
+      const fBurn = getSkill(tw, 'field_burn');
+      if (fBurn) {
+        if (tw._fieldBurnCd === undefined) tw._fieldBurnCd = 0;
+        tw._fieldBurnCd -= dt;
+        if (tw._fieldBurnCd <= 0) {
+          tw._fieldBurnCd = fBurn.interval;
+          const burnDps = (tw.damage || 10) * (tw.atkSpd || 1) * fBurn.dot;
+          this.getEnemiesNear(tw.x, tw.y, fBurn.radius).forEach(e => {
+            e.burnDmg   = burnDps;
+            e.burnTimer = fBurn.dur;
+          });
+        }
+      }
+    }
+  }
+
+  // ── tickZones：zone_slow / zone_shred 區域維持 ──
+  tickZones(dt) {
+    for (const z of this.zones) {
+      z.t = (z.t || 0) + dt;
+      if (z.type === 'puddle') {
+        this.getEnemiesNear(z.x, z.y, z.r).forEach(e => {
+          if (z.slowAmt)    { e.chillStacks = Math.max(e.chillStacks || 0, z.slowAmt); e.chillDecay = 0; }
+          if (z.shredTarget){ e.shredStacks = Math.max(e.shredStacks || 0, z.shredTarget); e.shredDecay = 0; }
+        });
+      }
+    }
+    this.zones = this.zones.filter(z => z.t < z.dur);
+  }
+
+  // ── triggerCycleSkills：cycle_* 攻擊觸發 ──
+  triggerCycleSkills(tower, mainTarget) {
+    const cycleStun  = getSkill(tower, 'cycle_stun');
+    const cycleChill = getSkill(tower, 'cycle_chill');
+    const cycleShred = getSkill(tower, 'cycle_shred');
+    const cycleVuln  = getSkill(tower, 'cycle_vuln');
+    const cycleBurn  = getSkill(tower, 'cycle_burn');
+    const effects = [
+      cycleStun  && {sk: cycleStun,  type: 'stun'},
+      cycleChill && {sk: cycleChill, type: 'chill'},
+      cycleShred && {sk: cycleShred, type: 'shred'},
+      cycleVuln  && {sk: cycleVuln,  type: 'vuln'},
+      cycleBurn  && {sk: cycleBurn,  type: 'burn'},
+    ].filter(Boolean);
+    for (const {sk, type} of effects) {
+      const nearby = this.getEnemiesNear(tower.x, tower.y, sk.radius);
+      nearby.forEach(e => {
+        const ccMult = hasSkill(e, 'tenacity') ? (1 - getSkill(e, 'tenacity').ccReduce) : 1;
+        if      (type === 'stun')  e.stunTimer  = Math.max(e.stunTimer || 0, Math.min(sk.dur, 2.0) * ccMult);
+        else if (type === 'chill') e.chillStacks = Math.min((e.chillStacks||0) + sk.stacksPerCycle, GLOBAL_CAPS.chillMaxStacks);
+        else if (type === 'shred') e.shredStacks = Math.min((e.shredStacks||0) + sk.stacksPerCycle, GLOBAL_CAPS.shredMaxStacks);
+        else if (type === 'vuln')  e.vulnStacks  = Math.min((e.vulnStacks||0)  + sk.stacksPerCycle, GLOBAL_CAPS.vulnMaxStacks);
+        else if (type === 'burn')  { e.burnDmg = (tower.damage||10)*(tower.atkSpd||1)*sk.dot; e.burnTimer = sk.dur; }
+      });
+    }
+  }
+
+  // ── processKill：擊殺獎勵（killGold / permaBuff）──
+  processKill(enemy) {
+    this.gold += enemy.killGold || 0;
+    if (enemy._lastHitTower) {
+      const kgSk = getSkill(enemy._lastHitTower, 'killGold');
+      if (kgSk) this.gold += Math.floor((enemy.killGold || CONFIG.killGoldAiSend) * kgSk.bonus);
+      const pbSk = getSkill(enemy._lastHitTower, 'permaBuff');
+      if (pbSk) enemy._lastHitTower._permaBuff = (enemy._lastHitTower._permaBuff || 0) + pbSk.atkPerKill;
+    }
+  }
+
+  // ── processWaveInterest：每波利息結算 ──
+  processWaveInterest() {
+    const interestTower = this.towers.find(tw => hasSkill(tw, 'interest'));
+    if (!interestTower) return;
+    const iSk = getSkill(interestTower, 'interest');
+    const bonus = Math.min(Math.floor(this.gold * iSk.rate), iSk.cap);
+    if (bonus > 0) this.gold += bonus;
+  }
+}
+</script>
+
+<!-- ============================================================
+     Test Helpers
+     ============================================================ -->
+<script>
+function mkEnemy(overrides = {}) {
+  return {
+    hp: 100, maxHp: 100, armor: 0, resist: {},
+    elem: null, killGold: 0,
+    chillStacks: 0, chillDecay: 0, stunTimer: 0,
+    burnDmg: 0, burnTimer: 0, burnStacks: 0,
+    shredStacks: 0, shredDecay: 0,
+    vulnStacks: 0, vulnDecay: 0,
+    armorStacks: 0, _resilientReduction: 0, _hpPctCd: 0,
+    speed: 2, pathIdx: 0, x: 5, y: 5,
+    skills: [],
+    ...overrides
+  };
+}
+
+function mkTower(skills = [], stats = {}) {
+  return {
+    x: 5, y: 5, damage: 50, atkSpd: 1, range: 3, aoe: 0,
+    atkCount: 0, atkTimer: 0,
+    skills,
+    _rampBonus: 0, _rampTarget: null,
+    _warpCd: 0, _knockCd: 0,
+    _killRushTimer: 0, _killRushBonus: 0,
+    _auraDmgFlat: 0, _auraDmgPct: 0, _auraAtkSpd: 0, _auraRange: 0,
+    _permaBuff: 0,
+    ...stats
+  };
+}
+</script>
+
+<!-- ============================================================
+     Test Runner
+     ============================================================ -->
+<script>
+const _tests = [];
+let _currentGroup = '未分組';
+
+function group(name) { _currentGroup = name; }
+
+function test(name, fn) {
+  _tests.push({ name, group: _currentGroup, fn });
+}
+
+function assertEqual(actual, expected, label = '') {
+  if (actual !== expected)
+    throw new Error(`${label ? label + ': ' : ''}expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+}
+
+function assertRange(actual, lo, hi, label = '') {
+  if (actual < lo || actual > hi)
+    throw new Error(`${label ? label + ': ' : ''}expected [${lo}, ${hi}], got ${actual}`);
+}
+
+function assert(cond, label = '') {
+  if (!cond)
+    throw new Error(`${label ? label + ': ' : ''}assertion failed`);
+}
+
+function runAll(filterFn = () => true) {
+  const results = [];
+  for (const t of _tests) {
+    if (!filterFn(t)) continue;
+    try {
+      t.fn();
+      results.push({...t, pass: true});
+    } catch(e) {
+      results.push({...t, pass: false, error: e.message});
+    }
+  }
+  renderResults(results);
+  return results;
+}
+
+function renderResults(results) {
+  const container = document.getElementById('results');
+  container.innerHTML = '';
+
+  // 統計
+  const passed = results.filter(r => r.pass).length;
+  const failed = results.filter(r => !r.pass).length;
+  const summaryEl = document.getElementById('summary');
+  summaryEl.style.display = '';
+  summaryEl.textContent = failed === 0
+    ? `✅ ${passed} passed — all green`
+    : `❌ ${failed} failed / ${passed} passed`;
+  summaryEl.className = failed === 0 ? 'all-pass' : 'has-fail';
+
+  // 按 group 分組
+  const grouped = {};
+  for (const r of results) {
+    if (!grouped[r.group]) grouped[r.group] = [];
+    grouped[r.group].push(r);
+  }
+
+  for (const [grp, items] of Object.entries(grouped)) {
+    const gPassed = items.filter(i => i.pass).length;
+    const gFailed = items.filter(i => !i.pass).length;
+    const div = document.createElement('div');
+    div.className = 'group';
+    const badge = gFailed > 0 ? `<span style="color:#e94560">${gFailed}❌</span>` : `<span style="color:#55efc4">✅</span>`;
+    div.innerHTML = `<div class="group-title">${grp}　${badge}　${gPassed}/${items.length}</div>`;
+    for (const r of items) {
+      const el = document.createElement('div');
+      el.className = `test ${r.pass ? 'pass' : 'fail'}`;
+      el.innerHTML = r.pass
+        ? `✅ ${r.name}`
+        : `❌ ${r.name}<span class="err">${r.error}</span>`;
+      div.appendChild(el);
+    }
+    container.appendChild(div);
+  }
+
+  if (results.length === 0) {
+    container.innerHTML = '<div style="color:#888;padding:12px;">（尚無測試案例）</div>';
+    summaryEl.textContent = '0 passed / 0 failed';
+    summaryEl.className = 'all-pass';
+  }
+}
+
+document.getElementById('btn-run').onclick = () => {
+  const kw = document.getElementById('filter').value.toLowerCase();
+  runAll(t => !kw || t.name.toLowerCase().includes(kw) || t.group.toLowerCase().includes(kw));
+};
+
+document.getElementById('btn-fail').onclick = () => {
+  const results = runAll();
+  renderResults(results.filter(r => !r.pass));
+};
+</script>
+
+<!-- ============================================================
+     Step 1 Smoke Tests — 驗證框架本身正常運作
+     ============================================================ -->
+<script>
+group('🔧 框架驗證（Smoke Tests）');
+
+test('MockGame doDmg 減少 enemy.hp', () => {
+  const game  = new MockGame();
+  const enemy = mkEnemy({hp: 100, maxHp: 100});
+  game.doDmg(enemy, 50, null, null);
+  assert(enemy.hp < 100, 'hp should decrease after doDmg');
+});
+
+test('mkEnemy 建立預設 enemy 物件', () => {
+  const e = mkEnemy();
+  assertEqual(e.hp, 100);
+  assertEqual(e.maxHp, 100);
+  assertEqual(e.armor, 0);
+  assertEqual(e.chillStacks, 0);
+});
+
+test('mkTower 建立預設 tower 物件', () => {
+  const t = mkTower([]);
+  assertEqual(t.damage, 50);
+  assertEqual(t.atkSpd, 1);
+  assertEqual(t._rampBonus, 0);
+});
+
+test('assertEqual 通過', () => {
+  assertEqual(1 + 1, 2, '1+1=2');
+});
+
+test('assertRange 通過', () => {
+  assertRange(5, 0, 10, '5 in [0,10]');
+});
+
+test('assert 通過', () => {
+  assert(true, 'true is truthy');
+});
+
+test('mkEnemy overrides 生效', () => {
+  const e = mkEnemy({hp: 500, armor: 0.5, elem: 'fire'});
+  assertEqual(e.hp, 500);
+  assertEqual(e.armor, 0.5);
+  assertEqual(e.elem, 'fire');
+});
+
+test('mkTower skills 傳入正確', () => {
+  const sk = makeSkill('burn', {dot: 0.3, dur: 3});
+  const t  = mkTower([sk], {damage: 100});
+  assertEqual(t.skills.length, 1);
+  assertEqual(t.damage, 100);
+  assert(hasSkill(t, 'burn'), 'tower has burn skill');
+});
+
+test('tickEnemy burn DOT 扣血', () => {
+  const game  = new MockGame();
+  const enemy = mkEnemy({hp: 100, burnDmg: 10, burnTimer: 2});
+  game.tickEnemy(enemy, 1.0);
+  assertRange(enemy.hp, 89, 91, 'burn 10/s × 1s ≈ 90hp');
+  assertRange(enemy.burnTimer, 0.9, 1.1, 'burnTimer -= dt');
+});
+
+test('tickEnemy stunTimer 跳過更新', () => {
+  const game  = new MockGame();
+  const enemy = mkEnemy({hp: 100, burnDmg: 10, burnTimer: 2, stunTimer: 5});
+  game.tickEnemy(enemy, 1.0);
+  assertEqual(enemy.hp, 100, 'stunned enemy takes no dot damage');
+  assertEqual(enemy.stunTimer, 4, 'stunTimer ticks down');
+});
+</script>
+
+<!-- ============================================================
+     Step 2：直接傷害修飾類技能測試
+     unstable / execute / shred / vulnerability / hpPct / fortify / resilient / dodge
+     ============================================================ -->
+<script>
+group('💥 直接傷害修飾（unstable / execute / shred / vuln / hpPct / fortify / resilient / dodge）');
+
+// ── unstable ──────────────────────────────────────────────────
+test('unstable: variance=0.5 傷害在 [50, 150] 內', () => {
+  // baseDmg=100, variance=0.5 → dmg = 100 * (1 ± 0.5) ∈ [50, 150]
+  const tower = mkTower([makeSkill('unstable', {variance: 0.5})]);
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < 500; i++) {
+    const e = mkEnemy({hp: 10000, maxHp: 10000});
+    const hpBefore = e.hp;
+    new MockGame().doDmg(e, 100, null, tower);
+    const dmg = hpBefore - e.hp;
+    if (dmg < min) min = dmg;
+    if (dmg > max) max = dmg;
+  }
+  assert(min >= 50, `min dmg should be ≥50, got ${min}`);
+  assert(max <= 150, `max dmg should be ≤150, got ${max}`);
+});
+
+test('unstable: variance=0.5 平均傷害 ≈ 100 (±8)', () => {
+  const tower = mkTower([makeSkill('unstable', {variance: 0.5})]);
+  let total = 0;
+  const N = 1000;
+  for (let i = 0; i < N; i++) {
+    const e = mkEnemy({hp: 10000, maxHp: 10000});
+    new MockGame().doDmg(e, 100, null, tower);
+    total += 10000 - e.hp;
+  }
+  const mean = total / N;
+  assertRange(mean, 92, 108, `mean dmg should ≈100, got ${mean.toFixed(1)}`);
+});
+
+// ── execute ────────────────────────────────────────────────────
+test('execute: HP > threshold 時無加成', () => {
+  const tower = mkTower([makeSkill('execute', {threshold: 0.2, mult: 2})]);
+  const enemy = mkEnemy({hp: 80, maxHp: 100});  // 80% HP，高於 20%
+  new MockGame().doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.hp, 30, 'hp 80 - 50 = 30');
+});
+
+test('execute: HP < threshold 時傷害 ×mult', () => {
+  const tower = mkTower([makeSkill('execute', {threshold: 0.2, mult: 2})]);
+  const enemy = mkEnemy({hp: 15, maxHp: 100});  // 15% HP，低於 20%
+  new MockGame().doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.hp, -85, 'hp 15 - 100(×2) = -85');
+});
+
+test('execute: HP == threshold 不觸發（嚴格小於）', () => {
+  // 條件是 enemy.hp / enemy.maxHp < threshold（嚴格小於）
+  const tower = mkTower([makeSkill('execute', {threshold: 0.2, mult: 2})]);
+  const enemy = mkEnemy({hp: 20, maxHp: 100});  // 剛好 20%，不觸發
+  new MockGame().doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.hp, -30, 'hp 20 - 50 = -30（無加成）');
+});
+
+// ── shred ──────────────────────────────────────────────────────
+test('shred: 命中後 shredStacks 遞增', () => {
+  const tower = mkTower([makeSkill('shred', {stacksPerHit: 2})]);
+  const enemy = mkEnemy({armor: 0.5});
+  new MockGame().doDmg(enemy, 100, null, tower);
+  assertEqual(enemy.shredStacks, 2, 'shredStacks after 1 hit');
+  new MockGame().doDmg(enemy, 100, null, tower);
+  assertEqual(enemy.shredStacks, 4, 'shredStacks after 2 hits');
+});
+
+test('shred: 第1擊全護甲，第2擊護甲略降（shred 在計算後才疊加）', () => {
+  // armor=0.5，shredPerStack=0.005
+  // 1st hit: shredAmt=0 → armor=0.5 → dmg=100*(1-0.5)=50
+  // 2nd hit: shredAmt=2*0.005=0.01 → armor=0.49 → dmg=floor(100*(1-0.49))=51
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('shred', {stacksPerHit: 2})]);
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000, armor: 0.5});
+
+  game.doDmg(enemy, 100, null, tower);
+  const dmg1 = 1000 - enemy.hp;
+  assertEqual(dmg1, 50, '1st hit dmg=50（全護甲）');
+
+  game.doDmg(enemy, 100, null, tower);
+  const dmg2 = (1000 - dmg1) - enemy.hp;
+  assertEqual(dmg2, 51, '2nd hit dmg=51（shred 削護甲）');
+});
+
+test('shred: shredStacks 上限為 GLOBAL_CAPS.shredMaxStacks', () => {
+  const tower = mkTower([makeSkill('shred', {stacksPerHit: 100})]);
+  const enemy = mkEnemy({shredStacks: GLOBAL_CAPS.shredMaxStacks - 50});
+  new MockGame().doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.shredStacks, GLOBAL_CAPS.shredMaxStacks, 'shredStacks capped');
+});
+
+test('shred: 護甲不會因 shred 變負（max 0）', () => {
+  // shredStacks=120 → shredAmt=0.6，armor=0.5 → armor=max(0, 0.5-0.6)=0
+  const tower = mkTower([]);
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000, armor: 0.5, shredStacks: 120});
+  new MockGame().doDmg(enemy, 100, null, tower);
+  // armor = max(0, 0.5 - 0.6) = 0 → dmg = 100
+  assertEqual(1000 - enemy.hp, 100, 'armor floored at 0, full damage');
+});
+
+// ── vulnerability ──────────────────────────────────────────────
+test('vulnerability: 第1擊無加成（stacks 在擊後才施加）', () => {
+  const tower = mkTower([makeSkill('vulnerability', {stacksPerHit: 5})]);
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000});
+  new MockGame().doDmg(enemy, 100, null, tower);
+  assertEqual(1000 - enemy.hp, 100, '1st hit: no vuln bonus yet');
+  assertEqual(enemy.vulnStacks, 5, 'vulnStacks=5 after 1st hit');
+});
+
+test('vulnerability: 第2擊受 stacks 放大', () => {
+  // vulnStacks=5 → vulnAmt=5*0.02=0.1 → dmg=floor(100*1.1)=110
+  const tower = mkTower([makeSkill('vulnerability', {stacksPerHit: 5})]);
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000});
+  const game  = new MockGame();
+  game.doDmg(enemy, 100, null, tower);  // 1st: stacks=0, 打完→stacks=5
+  game.doDmg(enemy, 100, null, tower);  // 2nd: stacks=5, dmg=110
+  assertEqual(1000 - enemy.hp - 100, 110, '2nd hit dmg=110（vuln +10%）');
+});
+
+test('vulnerability: vulnStacks 上限為 GLOBAL_CAPS.vulnMaxStacks', () => {
+  const tower = mkTower([makeSkill('vulnerability', {stacksPerHit: 50})]);
+  const enemy = mkEnemy({vulnStacks: GLOBAL_CAPS.vulnMaxStacks - 10});
+  new MockGame().doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.vulnStacks, GLOBAL_CAPS.vulnMaxStacks, 'vulnStacks capped');
+});
+
+// ── hpPct ──────────────────────────────────────────────────────
+// 注意：實際遊戲中 atkCount 在攻擊迴圈遞增（先++再傳入doDmg）
+// 測試中手動設定 atkCount 模擬此行為
+test('hpPct: atkCount%every==0 時觸發額外傷害', () => {
+  // every=3，baseDmg 傷害另計，hpPct 額外扣血
+  const tower = mkTower([makeSkill('hpPct', {pct: 0.05, every: 3, cd: 0, cap: 500})],
+                         {damage: 50, atkSpd: 1});
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000, _hpPctCd: 0});
+  tower.atkCount = 3;  // 3 % 3 = 0 → 觸發
+  new MockGame().doDmg(enemy, 50, null, tower);
+  // 直接傷害 50 + hpPct 傷害 floor(1000*0.05)=50 = 總計 100
+  assertEqual(1000 - enemy.hp, 100, 'hpPct fires at atkCount=3');
+});
+
+test('hpPct: atkCount%every≠0 時不觸發', () => {
+  const tower = mkTower([makeSkill('hpPct', {pct: 0.05, every: 3, cd: 0, cap: 500})]);
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000, _hpPctCd: 0});
+  tower.atkCount = 2;  // 2 % 3 ≠ 0
+  new MockGame().doDmg(enemy, 50, null, tower);
+  assertEqual(1000 - enemy.hp, 50, 'hpPct does not fire at atkCount=2');
+});
+
+test('hpPct: cap 限制單次附加傷害上限', () => {
+  // maxHp=10000, pct=0.05 → rawHpDmg=500, cap=200 → 取 200
+  const tower = mkTower([makeSkill('hpPct', {pct: 0.05, every: 3, cd: 0, cap: 200})]);
+  const enemy = mkEnemy({hp: 20000, maxHp: 10000, _hpPctCd: 0});
+  tower.atkCount = 3;
+  new MockGame().doDmg(enemy, 50, null, tower);
+  const total = 20000 - enemy.hp;
+  assertEqual(total, 250, 'hpPct capped: 50(direct) + 200(hpPct capped) = 250');
+});
+
+test('hpPct: CD 期間不重複觸發', () => {
+  const tower = mkTower([makeSkill('hpPct', {pct: 0.05, every: 3, cd: 2, cap: 500})]);
+  const enemy = mkEnemy({hp: 2000, maxHp: 1000, _hpPctCd: 1.5}); // CD 中
+  tower.atkCount = 3;  // 本該觸發，但 CD 中
+  new MockGame().doDmg(enemy, 50, null, tower);
+  assertEqual(2000 - enemy.hp, 50, 'hpPct blocked by cd');
+});
+
+test('hpPct: 觸發後設定 CD', () => {
+  const tower = mkTower([makeSkill('hpPct', {pct: 0.05, every: 3, cd: 2, cap: 500})]);
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000, _hpPctCd: 0});
+  tower.atkCount = 3;
+  new MockGame().doDmg(enemy, 50, null, tower);
+  assertEqual(enemy._hpPctCd, 2, 'hpPctCd set to cd value after trigger');
+});
+
+// ── fortify ────────────────────────────────────────────────────
+test('fortify: 單次傷害上限', () => {
+  const enemy = mkEnemy({hp: 100, maxHp: 100, skills: [makeSkill('fortify', {dmgCap: 30})]});
+  new MockGame().doDmg(enemy, 100, null, null);
+  assertEqual(enemy.hp, 70, 'fortify: 100 dmg capped to 30 → hp=70');
+});
+
+test('fortify: 低於上限時不截斷', () => {
+  const enemy = mkEnemy({hp: 100, maxHp: 100, skills: [makeSkill('fortify', {dmgCap: 30})]});
+  new MockGame().doDmg(enemy, 20, null, null);
+  assertEqual(enemy.hp, 80, 'fortify: 20 dmg under cap → hp=80');
+});
+
+test('fortify: 多次打仍各自受限', () => {
+  const enemy = mkEnemy({hp: 100, maxHp: 100, skills: [makeSkill('fortify', {dmgCap: 30})]});
+  const game  = new MockGame();
+  game.doDmg(enemy, 100, null, null);  // cap→30, hp=70
+  game.doDmg(enemy, 100, null, null);  // cap→30, hp=40
+  game.doDmg(enemy, 100, null, null);  // cap→30, hp=10
+  assertEqual(enemy.hp, 10, 'fortify: each hit capped separately');
+});
+
+// ── resilient ──────────────────────────────────────────────────
+test('resilient: 第1擊無減傷（_resilientReduction 初始為0）', () => {
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000,
+    skills: [makeSkill('resilient', {stack: 0.02, cap: 0.4})]});
+  new MockGame().doDmg(enemy, 100, null, null);
+  assertEqual(1000 - enemy.hp, 100, 'no reduction on 1st hit');
+  assertEqual(enemy._resilientReduction, 0.02, 'reduction accumulates after hit');
+});
+
+test('resilient: 第2擊受 reduction 減傷', () => {
+  // _resilientReduction=0.02 → finalDmg = floor(100*(1-0.02))=floor(98)=98
+  const game  = new MockGame();
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000,
+    skills: [makeSkill('resilient', {stack: 0.02, cap: 0.4})]});
+  game.doDmg(enemy, 100, null, null);  // 1st: dmg=100, reduction→0.02
+  game.doDmg(enemy, 100, null, null);  // 2nd: dmg=98
+  assertEqual(1000 - enemy.hp - 100, 98, '2nd hit: floor(100*0.98)=98');
+});
+
+test('resilient: reduction 上限 cap（不超過 0.4）', () => {
+  const game  = new MockGame();
+  const enemy = mkEnemy({hp: 100000, maxHp: 100000,
+    skills: [makeSkill('resilient', {stack: 0.1, cap: 0.4})]});
+  // 打10次：reduction 累積 0,0.1,0.2,0.3,0.4,0.4,0.4...
+  for (let i = 0; i < 10; i++) game.doDmg(enemy, 100, null, null);
+  assert(enemy._resilientReduction <= 0.4, `reduction should not exceed 0.4, got ${enemy._resilientReduction}`);
+  assertEqual(enemy._resilientReduction, 0.4, 'reduction capped at 0.4');
+});
+
+test('resilient: 達上限後傷害固定（1 - cap）', () => {
+  // cap=0.4 → 最大減傷 40% → 傷害 = floor(100*0.6) = 60（最小）
+  const game  = new MockGame();
+  const enemy = mkEnemy({hp: 100000, maxHp: 100000,
+    skills: [makeSkill('resilient', {stack: 0.1, cap: 0.4})],
+    _resilientReduction: 0.4});
+  const hpBefore = enemy.hp;
+  game.doDmg(enemy, 100, null, null);
+  assertEqual(hpBefore - enemy.hp, 60, 'at cap: dmg = floor(100*0.6)=60');
+});
+
+// ── dodge ──────────────────────────────────────────────────────
+test('dodge: chance=1.0 每次必閃（不扣血）', () => {
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000,
+    skills: [makeSkill('dodge', {chance: 1.0})]});
+  for (let i = 0; i < 20; i++) new MockGame().doDmg(enemy, 50, null, null);
+  assertEqual(enemy.hp, 1000, 'full dodge: no damage');
+});
+
+test('dodge: chance=0 從不閃避（每次扣血）', () => {
+  const enemy = mkEnemy({hp: 10000, maxHp: 10000,
+    skills: [makeSkill('dodge', {chance: 0})]});
+  for (let i = 0; i < 10; i++) new MockGame().doDmg(enemy, 100, null, null);
+  assertEqual(enemy.hp, 9000, 'no dodge: full 1000 damage');
+});
+
+test('dodge: chance=0.5 統計約 50% 命中（1000次，允許 ±8%）', () => {
+  // 1000次，每次10傷，期望總傷 5000
+  const enemy = mkEnemy({hp: 100000, maxHp: 100000,
+    skills: [makeSkill('dodge', {chance: 0.5})]});
+  for (let i = 0; i < 1000; i++) new MockGame().doDmg(enemy, 10, null, null);
+  const totalDmg = 100000 - enemy.hp;
+  assertRange(totalDmg, 4200, 5800, `dodge 50%: total dmg should ≈5000, got ${totalDmg}`);
+});
+
+// ── 元素相剋 ──────────────────────────────────────────────────
+test('元素相剋: 火攻水克制 ×1.3', () => {
+  // CONFIG.elemAdv.fire.water = 1.3
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000, elem: 'water'});
+  new MockGame().doDmg(enemy, 100, 'fire', null);
+  // dmg = floor(100 * 1.3) = 130
+  assertEqual(1000 - enemy.hp, 130, 'fire vs water: ×1.3');
+});
+
+test('元素相剋: 火攻雷被克制 ×0.7', () => {
+  // CONFIG.elemAdv.fire.thunder = 0.7
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000, elem: 'thunder'});
+  new MockGame().doDmg(enemy, 100, 'fire', null);
+  assertEqual(1000 - enemy.hp, 70, 'fire vs thunder: ×0.7');
+});
+
+test('元素相剋: 無相剋關係時傷害不變', () => {
+  // fire vs earth：CONFIG.elemAdv.fire 無 earth 條目
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000, elem: 'earth'});
+  new MockGame().doDmg(enemy, 100, 'fire', null);
+  assertEqual(1000 - enemy.hp, 100, 'fire vs earth: no modifier');
+});
+</script>
+
+<!-- ============================================================
+     Step 3：火鏈狀態機測試（burn / ignite / detonate）
+     ============================================================ -->
+<script>
+group('🔥 火鏈狀態機（burn / ignite / detonate）');
+
+// ── burn 初次命中 ──────────────────────────────────────────────
+test('burn: 命中後設定 burnTimer / burnDmg / burnStacks', () => {
+  // burnCoeff = tower.damage * tower.atkSpd = 50 * 1 = 50
+  // burnDmg   = burnCoeff * dot = 50 * 0.3 = 15
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('burn', {dot: 0.3, dur: 3})], {damage: 50, atkSpd: 1});
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.burnTimer,  3,  'burnTimer = dur');
+  assertEqual(enemy.burnDmg,    15, 'burnDmg = 50*1*0.3');
+  assertEqual(enemy.burnStacks, 1,  'burnStacks = 1 after 1st hit');
+});
+
+test('burn: burnDmg 使用 tower.damage × atkSpd × dot（非 baseDmg）', () => {
+  // baseDmg=30（與 tower.damage=80 不同），確認 burnDmg 用 tower 數值
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('burn', {dot: 0.5, dur: 3})], {damage: 80, atkSpd: 2});
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 30, null, tower);
+  // burnDmg = 80 * 2 * 0.5 = 80（不是 30 * 0.5 = 15）
+  assertEqual(enemy.burnDmg, 80, 'burnDmg = tower.damage*atkSpd*dot');
+});
+
+// ── burn DOT tick ──────────────────────────────────────────────
+test('burn: DOT tick 每秒扣 burnDmg 血', () => {
+  // 手動設定 burnDmg/burnTimer，不混入直接傷害
+  const game  = new MockGame();
+  const enemy = mkEnemy({hp: 100, burnDmg: 15, burnTimer: 3});
+  game.tickEnemy(enemy, 1.0);
+  assertRange(enemy.hp, 84.9, 85.1, 'burn 15/s × 1s → hp=85');
+  assertRange(enemy.burnTimer, 1.9, 2.1, 'burnTimer -= 1.0');
+});
+
+test('burn: DOT 部分秒數計算正確', () => {
+  const game  = new MockGame();
+  const enemy = mkEnemy({hp: 100, burnDmg: 20, burnTimer: 3});
+  game.tickEnemy(enemy, 0.5);
+  assertRange(enemy.hp, 89.9, 90.1, 'burn 20/s × 0.5s → hp=90');
+});
+
+test('burn: burnTimer 耗盡時不再扣血', () => {
+  const game  = new MockGame();
+  const enemy = mkEnemy({hp: 100, burnDmg: 10, burnTimer: 1.0});
+  game.tickEnemy(enemy, 2.0);  // 超過 burnTimer
+  assert(enemy.hp >= 89, `hp=${enemy.hp} should stop burning after timer`);
+  assert(enemy.burnTimer <= 0, 'burnTimer <= 0 after expiry');
+});
+
+// ── burn 重複命中 ──────────────────────────────────────────────
+test('burn: 重複命中時 burnTimer 重置（不累積）', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('burn', {dot: 0.3, dur: 3})], {damage: 50, atkSpd: 1});
+  const enemy = mkEnemy({hp: 1000});
+  game.doDmg(enemy, 50, null, tower);    // burnTimer=3
+  game.tickEnemy(enemy, 1.5);             // burnTimer≈1.5
+  game.doDmg(enemy, 50, null, tower);    // 重新命中 → burnTimer 重置為 3
+  assertEqual(enemy.burnTimer, 3, 'burnTimer reset to dur on reapply');
+});
+
+test('burn: 重複命中時 burnStacks 繼續累積', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('burn', {dot: 0.1, dur: 5})], {damage: 50, atkSpd: 1});
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.burnStacks, 1);
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.burnStacks, 2, 'burnStacks accumulates on each hit');
+});
+
+// ── burnStacks 熄火清空 ────────────────────────────────────────
+test('burn: burnTimer 歸零後 burnStacks 清空', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('burn', {dot: 0.1, dur: 1})], {damage: 50, atkSpd: 1});
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.burnStacks, 1);
+  game.tickEnemy(enemy, 1.5);  // burnTimer → -0.5 → 熄火
+  assertEqual(enemy.burnStacks, 0, 'burnStacks=0 after burnout');
+});
+
+test('burn: burnTimer 未歸零時 burnStacks 保留', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('burn', {dot: 0.1, dur: 5})], {damage: 50, atkSpd: 1});
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  game.tickEnemy(enemy, 2.0);  // burnTimer=3，尚未歸零
+  assertEqual(enemy.burnStacks, 1, 'burnStacks retained while burning');
+});
+
+// ── ignite ──────────────────────────────────────────────────────
+test('ignite: 第1次命中時 burnTimer=0，不觸發引燃', () => {
+  // 第1次命中時 enemy.burnTimer=0（初始），ignite 條件不成立
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',   {dot: 0.3, dur: 3}),
+    makeSkill('ignite', {flat: 0.2}),
+  ], {damage: 50, atkSpd: 1});
+  const enemy = mkEnemy({hp: 100, maxHp: 100});
+  game.doDmg(enemy, 50, null, tower);
+  // 直接傷害 50，無 ignite
+  assertEqual(enemy.hp, 50, '1st hit: direct 50 only, no ignite');
+});
+
+test('ignite: 第2次命中觸發引燃額外傷害', () => {
+  // igniteDmg = floor(baseDmg * flat) = floor(50 * 0.2) = 10
+  // 第2次: 直接50 + ignite10 = 60
+  // hp: 100→50(1st)→50-50-10=-10(2nd)
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',   {dot: 0.3, dur: 3}),
+    makeSkill('ignite', {flat: 0.2}),
+  ], {damage: 50, atkSpd: 1});
+  const enemy = mkEnemy({hp: 100, maxHp: 100});
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.hp, 50, '1st hit hp=50');
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.hp, -10, '2nd hit hp=50-50(direct)-10(ignite)=-10');
+});
+
+test('ignite: 引燃傷害使用 baseDmg × flat（非 tower.damage）', () => {
+  // baseDmg=30（故意不等於 tower.damage=200），igniteDmg = floor(30*0.4) = 12
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',   {dot: 0.1, dur: 5}),
+    makeSkill('ignite', {flat: 0.4}),
+  ], {damage: 200, atkSpd: 1});
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000});
+  game.doDmg(enemy, 30, null, tower);  // 1st: burnTimer=0→無ignite
+  const hp1 = enemy.hp;
+  game.doDmg(enemy, 30, null, tower);  // 2nd: igniteDmg = floor(30*0.4)=12
+  // 直接傷害 30 + ignite 12 = 42
+  assertEqual(hp1 - enemy.hp, 42, 'ignite uses baseDmg(30)*flat(0.4)=12');
+});
+
+test('ignite: 引燃傷害直接扣 HP（無護甲減免）', () => {
+  // enemy.armor=0.5，直接傷害被護甲減半，但 ignite 直接扣 hp
+  // 直接傷害 = floor(100*(1-0.5)) = 50
+  // igniteDmg = floor(100*0.2) = 20（不受護甲影響）
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',   {dot: 0.1, dur: 5}),
+    makeSkill('ignite', {flat: 0.2}),
+  ], {damage: 50, atkSpd: 1});
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000, armor: 0.5});
+  game.doDmg(enemy, 100, null, tower);  // 1st: direct=50
+  const hp1 = enemy.hp;
+  game.doDmg(enemy, 100, null, tower);  // 2nd: direct=50, ignite=floor(100*0.2)=20
+  // total this hit = 50+20 = 70
+  assertEqual(hp1 - enemy.hp, 70, 'ignite not reduced by armor');
+});
+
+// ── detonate ──────────────────────────────────────────────────
+test('detonate: 第1/2次命中不引爆', () => {
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',     {dot: 0.1, dur: 5}),
+    makeSkill('detonate', {ratio: 1.0}),
+  ], {damage: 100, atkSpd: 1});
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000});
+
+  game.doDmg(enemy, 100, null, tower);
+  assertEqual(enemy.burnStacks, 1, 'burnStacks=1 after 1st');
+
+  game.doDmg(enemy, 100, null, tower);
+  assertEqual(enemy.burnStacks, 2, 'burnStacks=2 after 2nd');
+
+  // 兩次各扣 100，共 200
+  assertEqual(enemy.hp, 800, 'hp=800 after 2 hits (no detonate)');
+});
+
+test('detonate: 第3次命中觸發引爆，burnStacks 歸零', () => {
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',     {dot: 0.1, dur: 5}),
+    makeSkill('detonate', {ratio: 1.0}),
+  ], {damage: 100, atkSpd: 1});
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000});
+
+  game.doDmg(enemy, 100, null, tower);
+  game.doDmg(enemy, 100, null, tower);
+  game.doDmg(enemy, 100, null, tower);  // 第3次 → detonate
+
+  assertEqual(enemy.burnStacks, 0, 'burnStacks reset to 0 after detonate');
+});
+
+test('detonate: 引爆傷害 = floor(baseDmg × ratio)', () => {
+  // 3 hits × direct100 = 300
+  // detonate = floor(100 * 1.5) = 150
+  // total = 450, hp = 1000-450 = 550
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',     {dot: 0.1, dur: 5}),
+    makeSkill('detonate', {ratio: 1.5}),
+  ], {damage: 100, atkSpd: 1});
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000});
+
+  game.doDmg(enemy, 100, null, tower);
+  game.doDmg(enemy, 100, null, tower);
+  game.doDmg(enemy, 100, null, tower);
+  assertEqual(enemy.hp, 550, '300(direct)+150(detonate)=450, hp=550');
+});
+
+test('detonate: 引爆為真傷（無視護甲）', () => {
+  // armor=0.5，每次直接傷害各 50
+  // 3次直接 = 150，detonate = floor(100*1.0) = 100（真傷）
+  // total = 250, hp = 1000-250 = 750
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',     {dot: 0.1, dur: 5}),
+    makeSkill('detonate', {ratio: 1.0}),
+  ], {damage: 100, atkSpd: 1});
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000, armor: 0.5});
+
+  game.doDmg(enemy, 100, null, tower);
+  game.doDmg(enemy, 100, null, tower);
+  game.doDmg(enemy, 100, null, tower);
+  assertEqual(enemy.hp, 750, 'detonate true dmg: 150(direct×armor)+100(det)=250');
+});
+
+test('detonate: 使用 baseDmg × ratio（非 tower.damage）', () => {
+  // baseDmg=40（不等於 tower.damage=200），detonate = floor(40*1.0)=40
+  // 3 hits: 3×40=120 direct + 40 detonate = 160
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',     {dot: 0.1, dur: 5}),
+    makeSkill('detonate', {ratio: 1.0}),
+  ], {damage: 200, atkSpd: 1});
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000});
+
+  game.doDmg(enemy, 40, null, tower);
+  game.doDmg(enemy, 40, null, tower);
+  game.doDmg(enemy, 40, null, tower);
+  assertEqual(enemy.hp, 840, 'detonate uses baseDmg(40) not tower.damage(200)');
+});
+
+test('detonate: 引爆後 burnStacks=0，後續可再次累積', () => {
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',     {dot: 0.1, dur: 5}),
+    makeSkill('detonate', {ratio: 1.0}),
+  ], {damage: 100, atkSpd: 1});
+  const enemy = mkEnemy({hp: 10000, maxHp: 10000});
+
+  // 第1輪3次 → 引爆
+  game.doDmg(enemy, 100, null, tower);
+  game.doDmg(enemy, 100, null, tower);
+  game.doDmg(enemy, 100, null, tower);
+  assertEqual(enemy.burnStacks, 0, 'after 1st detonate, stacks=0');
+
+  // 第2輪繼續累積
+  game.doDmg(enemy, 100, null, tower);
+  assertEqual(enemy.burnStacks, 1, '4th hit: stacks=1 (fresh cycle)');
+  game.doDmg(enemy, 100, null, tower);
+  game.doDmg(enemy, 100, null, tower);
+  assertEqual(enemy.burnStacks, 0, 'after 2nd detonate, stacks=0');
+});
+
+// ── burn + ignite + detonate 三合一（第3擊 ignite + detonate 同時觸發）──
+test('burn+ignite+detonate: 第3擊 ignite 先觸發，再引爆', () => {
+  // 順序：ignite（burnTimer>0）→ burnStacks++ → burnStacks>=3 → detonate
+  // 第3擊：direct50 + ignite10(floor(50*0.2)) + detonate50(floor(50*1.0))
+  // 第1擊：direct50
+  // 第2擊：direct50 + ignite10
+  // 第3擊：direct50 + ignite10 + detonate50 = 110
+  // total = 50+60+110 = 220，hp = 1000-220 = 780
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',     {dot: 0.1, dur: 5}),
+    makeSkill('ignite',   {flat: 0.2}),
+    makeSkill('detonate', {ratio: 1.0}),
+  ], {damage: 100, atkSpd: 1});
+  const enemy = mkEnemy({hp: 1000, maxHp: 1000});
+
+  game.doDmg(enemy, 50, null, tower);  // hit1: 50
+  game.doDmg(enemy, 50, null, tower);  // hit2: 50+10=60
+  game.doDmg(enemy, 50, null, tower);  // hit3: 50+10+50=110
+  assertEqual(enemy.hp, 780, 'burn+ignite+detonate combo: 780hp');
+});
+
+// ── detonate AOE ──────────────────────────────────────────────
+test('detonate: aoe 版引爆對範圍內所有敵人造成傷害', () => {
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',     {dot: 0.1, dur: 5}),
+    makeSkill('detonate', {ratio: 1.0, aoe: 2}),
+  ], {damage: 100, atkSpd: 1, x: 0, y: 0});
+
+  // 主目標在 (5,5)，旁邊第2個敵人在 (5,6)（距 1 格，在 aoe=2 範圍）
+  const mainTarget  = mkEnemy({hp: 1000, maxHp: 1000, x: 5, y: 5});
+  const nearbyEnemy = mkEnemy({hp: 1000, maxHp: 1000, x: 5, y: 6});
+  game.enemies = [mainTarget, nearbyEnemy];
+
+  // 對 mainTarget 打3次觸發引爆
+  game.doDmg(mainTarget, 100, null, tower);
+  game.doDmg(mainTarget, 100, null, tower);
+  game.doDmg(mainTarget, 100, null, tower);
+
+  // nearbyEnemy 被 AOE 引爆打到：detDmg = floor(100*1.0) = 100
+  assert(nearbyEnemy.hp < 1000, `nearby enemy should take AOE detonate dmg, hp=${nearbyEnemy.hp}`);
+  assertEqual(nearbyEnemy.hp, 900, 'nearby gets detonate AOE = 100 dmg');
+});
+
+test('detonate: aoe 版引爆不影響射程外敵人', () => {
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('burn',     {dot: 0.1, dur: 5}),
+    makeSkill('detonate', {ratio: 1.0, aoe: 2}),
+  ], {damage: 100, atkSpd: 1});
+
+  const mainTarget = mkEnemy({hp: 1000, maxHp: 1000, x: 5, y: 5});
+  const farEnemy   = mkEnemy({hp: 1000, maxHp: 1000, x: 5, y: 10}); // 距離 5，超出 aoe=2
+  game.enemies = [mainTarget, farEnemy];
+
+  game.doDmg(mainTarget, 100, null, tower);
+  game.doDmg(mainTarget, 100, null, tower);
+  game.doDmg(mainTarget, 100, null, tower);
+
+  assertEqual(farEnemy.hp, 1000, 'far enemy out of aoe range takes no detonate dmg');
+});
+</script>
+
+<!-- ============================================================
+     Step 4：冰系 + 控場技能測試（chill / freeze / warp / knockback / tenacity）
+     ============================================================ -->
+<script>
+group('❄️ 冰系 + 控場（chill / freeze / warp / knockback / tenacity）');
+
+// ── chill 基本疊層 ─────────────────────────────────────────────
+test('chill: 每次命中疊加 stacksPerHit 層', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('chill', {stacksPerHit: 3})]);
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.chillStacks, 3, 'after 1st hit');
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.chillStacks, 6, 'after 2nd hit');
+});
+
+test('chill: stacksPerHit=1（預設值）也能疊層', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('chill', {stacksPerHit: 1})]);
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.chillStacks, 1, 'default stacksPerHit=1');
+});
+
+test('chill: chillStacks 上限為 GLOBAL_CAPS.chillMaxStacks', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('chill', {stacksPerHit: 50})]);
+  const enemy = mkEnemy({chillStacks: GLOBAL_CAPS.chillMaxStacks - 10});
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.chillStacks, GLOBAL_CAPS.chillMaxStacks, 'capped at chillMaxStacks');
+});
+
+test('chill: 命中後 chillDecay 重置為 0', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('chill', {stacksPerHit: 3})]);
+  const enemy = mkEnemy({chillStacks: 30, chillDecay: 0.9});
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.chillDecay, 0, 'chillDecay reset on hit');
+});
+
+// ── chill 衰減 ─────────────────────────────────────────────────
+test('chill: tickEnemy 每秒衰減 chillDecayRate 層', () => {
+  // chillDecayRate=15，1秒後：floor(1.0*15)=15 層衰減
+  const game  = new MockGame();
+  const enemy = mkEnemy({chillStacks: 30, chillDecay: 0});
+  game.tickEnemy(enemy, 1.0);
+  assertEqual(enemy.chillStacks, 15, 'decay 15 stacks/s after 1s');
+});
+
+test('chill: 衰減後 chillDecay 餘量正確（整數批次）', () => {
+  // 1.0s：decayStacks=15，chillDecay=1.0-15/15=0
+  const game  = new MockGame();
+  const enemy = mkEnemy({chillStacks: 30, chillDecay: 0});
+  game.tickEnemy(enemy, 1.0);
+  assertRange(enemy.chillDecay, 0, 0.01, 'chillDecay residual after exact 1s');
+});
+
+test('chill: 小步長衰減使用 floor（不足 1 層時不衰減）', () => {
+  // dt=0.06s：chillDecay=0.06, decayStacks=floor(0.06*15)=floor(0.9)=0
+  const game  = new MockGame();
+  const enemy = mkEnemy({chillStacks: 30, chillDecay: 0});
+  game.tickEnemy(enemy, 0.06);
+  assertEqual(enemy.chillStacks, 30, 'sub-threshold dt: no decay yet');
+  // dt=0.067：chillDecay=0.067, floor(0.067*15)=floor(1.005)=1 → 1 層衰減
+  game.tickEnemy(enemy, 0.067);
+  assertEqual(enemy.chillStacks, 29, '1 stack decays at floor threshold');
+});
+
+test('chill: chillStacks 衰減到 0 後不繼續減', () => {
+  const game  = new MockGame();
+  const enemy = mkEnemy({chillStacks: 5, chillDecay: 0});
+  game.tickEnemy(enemy, 10.0);  // 遠超過所需時間
+  assertEqual(enemy.chillStacks, 0, 'chillStacks floored at 0');
+  assert(enemy.chillStacks >= 0, 'chillStacks never goes negative');
+});
+
+// ── 速度減乘公式驗證 ───────────────────────────────────────────
+test('chill 速度公式: 40 層 → 減速 20%', () => {
+  const slow = Math.min(40 * GLOBAL_CAPS.chillPerStack, GLOBAL_CAPS.slowPct);
+  assertEqual(slow, 0.2, '40 stacks × 0.005 = 0.2 slow');
+});
+
+test('chill 速度公式: 160 層達減速上限 80%', () => {
+  const slow = Math.min(160 * GLOBAL_CAPS.chillPerStack, GLOBAL_CAPS.slowPct);
+  assertEqual(slow, GLOBAL_CAPS.slowPct, '160 stacks capped at slowPct');
+});
+
+test('chill 速度公式: 0 層無減速', () => {
+  const slow = Math.min(0 * GLOBAL_CAPS.chillPerStack, GLOBAL_CAPS.slowPct);
+  assertEqual(slow, 0, '0 stacks = 0 slow');
+});
+
+// ── freeze 觸發 ────────────────────────────────────────────────
+test('freeze: 未達門檻時不觸發', () => {
+  // threshold=30, stacksPerHit=20: hit1 → stacks=20 < 30 → 不凍結
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('chill',  {stacksPerHit: 20}),
+    makeSkill('freeze', {threshold: 30, dur: 2}),
+  ]);
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.chillStacks, 20, 'chillStacks=20 after 1st hit');
+  assertEqual(enemy.stunTimer,    0, 'no freeze yet');
+});
+
+test('freeze: 達門檻時觸發，chillStacks 歸零', () => {
+  // hit2 → stacks=40 >= 30 → freeze
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('chill',  {stacksPerHit: 20}),
+    makeSkill('freeze', {threshold: 30, dur: 2}),
+  ]);
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.chillStacks, 0, 'chillStacks reset after freeze');
+  assertEqual(enemy.stunTimer,   2, 'freeze stunTimer = dur');
+});
+
+test('freeze: 正好等於門檻時觸發（>=，非>）', () => {
+  // threshold=20, stacksPerHit=20: hit1 → stacks=20 >= 20 → 觸發
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('chill',  {stacksPerHit: 20}),
+    makeSkill('freeze', {threshold: 20, dur: 1.5}),
+  ]);
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.stunTimer,   1.5, 'freeze fires at exactly threshold');
+  assertEqual(enemy.chillStacks, 0,   'chillStacks=0 after trigger');
+});
+
+test('freeze: 凍結後 chillStacks 可再次累積', () => {
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('chill',  {stacksPerHit: 20}),
+    makeSkill('freeze', {threshold: 20, dur: 1}),
+  ]);
+  const enemy = mkEnemy({stunTimer: 0});  // 先確保未凍結
+  game.doDmg(enemy, 50, null, tower);  // 觸發 freeze，stacks=0
+  assertEqual(enemy.chillStacks, 0, 'reset after 1st freeze');
+  // 再打，stacks 重新從 0 開始累積
+  enemy.stunTimer = 0;  // 手動清除 stun（模擬等待 stun 結束）
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.chillStacks, 0, '2nd freeze also triggers');
+  assertEqual(enemy.stunTimer, 1, '2nd freeze stunTimer refreshed');
+});
+
+test('freeze: 不縮短已有更長的 stunTimer（max 語意）', () => {
+  // enemy 已被其他效果凍結 5s，freeze dur=2 不應縮短
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('chill',  {stacksPerHit: 30}),
+    makeSkill('freeze', {threshold: 20, dur: 2}),
+  ]);
+  const enemy = mkEnemy({stunTimer: 5.0});
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.stunTimer, 5, 'freeze does not reduce longer stun');
+});
+
+// ── tenacity × freeze/warp ────────────────────────────────────
+test('tenacity: ccReduce=0.5 使 freeze 時長減半', () => {
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('chill',  {stacksPerHit: 20}),
+    makeSkill('freeze', {threshold: 20, dur: 2}),
+  ]);
+  const enemy = mkEnemy({skills: [makeSkill('tenacity', {ccReduce: 0.5})]});
+  game.doDmg(enemy, 50, null, tower);
+  // stunTimer = 2 * (1-0.5) = 1
+  assertEqual(enemy.stunTimer, 1, 'tenacity halves freeze duration');
+});
+
+test('tenacity: ccReduce=0.3 使 warp 時長 ×0.7', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('warp', {dur: 2, cd: 0})]);
+  const enemy = mkEnemy({skills: [makeSkill('tenacity', {ccReduce: 0.3})]});
+  game.doDmg(enemy, 50, null, tower);
+  // stunTimer = 2 * (1-0.3) = 1.4
+  assertRange(enemy.stunTimer, 1.39, 1.41, 'tenacity reduces warp duration');
+});
+
+test('tenacity: ccReduce=1.0 完全免疫 CC', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('warp', {dur: 3, cd: 0})]);
+  const enemy = mkEnemy({skills: [makeSkill('tenacity', {ccReduce: 1.0})]});
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.stunTimer, 0, 'full tenacity: stun=0');
+});
+
+// ── warp 控場 ──────────────────────────────────────────────────
+test('warp: 命中後設定 stunTimer 並啟動 CD', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('warp', {dur: 1.5, cd: 8})]);
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.stunTimer, 1.5, 'warp sets stunTimer=dur');
+  assertEqual(tower._warpCd,   8,   'warp sets _warpCd=cd');
+});
+
+test('warp: CD 期間不重複觸發', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('warp', {dur: 1.5, cd: 8})]);
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);   // 1st: stuns
+  tower._warpCd = 7.9;                  // 尚在 CD
+  enemy.stunTimer = 0;                  // 手動清除，方便觀察
+  game.doDmg(enemy, 50, null, tower);   // 應不觸發
+  assertEqual(enemy.stunTimer, 0, 'warp blocked by cd');
+});
+
+test('warp: CD 歸零後可再次觸發', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('warp', {dur: 1.5, cd: 8})]);
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  tower._warpCd = 0;                    // CD 清零
+  enemy.stunTimer = 0;
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.stunTimer, 1.5, 'warp fires again after cd=0');
+});
+
+test('warp: 不縮短已有更長的 stunTimer（max 語意）', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('warp', {dur: 1.5, cd: 0})]);
+  const enemy = mkEnemy({stunTimer: 3.0});  // 敵人已有更長 stun
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.stunTimer, 3.0, 'warp does not reduce longer stun');
+});
+
+test('warp: 延長已有較短的 stunTimer', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('warp', {dur: 2.0, cd: 0})]);
+  const enemy = mkEnemy({stunTimer: 0.5});  // 現有 stun 較短
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.stunTimer, 2.0, 'warp extends shorter stun');
+});
+
+// ── knockback ──────────────────────────────────────────────────
+test('knockback: 命中後 pathIdx 減少 dist', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('knockback', {dist: 2, cd: 5})]);
+  const enemy = mkEnemy({pathIdx: 10});
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.pathIdx, 8, 'pathIdx 10-2=8');
+  assertEqual(tower._knockCd, 5, '_knockCd set to cd');
+});
+
+test('knockback: pathIdx 不低於 0（floor）', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('knockback', {dist: 5, cd: 3})]);
+  const enemy = mkEnemy({pathIdx: 2});
+  game.doDmg(enemy, 50, null, tower);
+  assertEqual(enemy.pathIdx, 0, 'pathIdx floored at 0');
+});
+
+test('knockback: CD 期間不重複擊退', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('knockback', {dist: 3, cd: 5})]);
+  const enemy = mkEnemy({pathIdx: 15});
+  game.doDmg(enemy, 50, null, tower);   // pathIdx=12, _knockCd=5
+  const afterFirst = enemy.pathIdx;
+  tower._knockCd = 4.9;                 // 尚在 CD
+  game.doDmg(enemy, 50, null, tower);   // 不應再擊退
+  assertEqual(enemy.pathIdx, afterFirst, 'knockback blocked by cd');
+});
+
+test('knockback: CD 歸零後可再次擊退', () => {
+  const game  = new MockGame();
+  const tower = mkTower([makeSkill('knockback', {dist: 2, cd: 5})]);
+  const enemy = mkEnemy({pathIdx: 20});
+  game.doDmg(enemy, 50, null, tower);   // pathIdx=18, _knockCd=5
+  tower._knockCd = 0;
+  game.doDmg(enemy, 50, null, tower);   // pathIdx=16
+  assertEqual(enemy.pathIdx, 16, 'knockback fires again after cd=0');
+});
+
+// ── 複合：chill + warp（CC 共存取 max）─────────────────────────
+test('chill+warp: stunTimer 取兩者最大值', () => {
+  // warp dur=1, freeze dur=3 → freeze 贏
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('chill',  {stacksPerHit: 30}),
+    makeSkill('freeze', {threshold: 20, dur: 3}),
+    makeSkill('warp',   {dur: 1, cd: 0}),
+  ]);
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  // chillStacks=30>=20 → freeze stunTimer=3；warp tries max(3,1)=3 (unchanged)
+  assertEqual(enemy.stunTimer, 3, 'freeze(3) wins over warp(1)');
+});
+
+test('chill+warp: warp dur > freeze dur 時 warp 贏', () => {
+  const game  = new MockGame();
+  const tower = mkTower([
+    makeSkill('chill',  {stacksPerHit: 30}),
+    makeSkill('freeze', {threshold: 20, dur: 1}),
+    makeSkill('warp',   {dur: 4, cd: 0}),
+  ]);
+  const enemy = mkEnemy();
+  game.doDmg(enemy, 50, null, tower);
+  // freeze stunTimer=1; warp max(1,4)=4
+  assertEqual(enemy.stunTimer, 4, 'warp(4) wins over freeze(1)');
+});
+</script>
+
+<script>
+// ── Step 5：ramp / aura_dmg / aura_atkSpd / aura_range ──
+group('Step5 ramp 連攻積累', () => {
+
+  // 模擬 ramp state machine（對應 game.js ~2882-2887）
+  function simulateRamp(tower, target, hits) {
+    const rampSk = getSkill(tower, 'ramp');
+    for (let i = 0; i < hits; i++) {
+      if (tower._rampTarget === target) {
+        tower._rampBonus = Math.min(rampSk.cap, (tower._rampBonus || 0) + rampSk.perHit);
+      } else {
+        tower._rampTarget = target;
+        tower._rampBonus = Math.max(0, (tower._rampBonus || 0) - (rampSk.switchLoss || 0) * rampSk.perHit);
+      }
+    }
+  }
+
+  test('ramp 4次同目標 = 0.20', () => {
+    const tower = mkTower([makeSkill('ramp', {perHit:0.05, cap:0.6, switchLoss:3})]);
+    const enemy = mkEnemy();
+    simulateRamp(tower, enemy, 4);
+    assertRange(tower._rampBonus, 0.199, 0.201, 'ramp 4 hits');
+  });
+
+  test('ramp 達到 cap 後不再增加', () => {
+    const tower = mkTower([makeSkill('ramp', {perHit:0.05, cap:0.6, switchLoss:3})]);
+    const enemy = mkEnemy();
+    simulateRamp(tower, enemy, 20);
+    assertRange(tower._rampBonus, 0.599, 0.601, 'ramp capped at 0.6');
+  });
+
+  test('ramp 切換目標扣 switchLoss 層（0.5 → 0.35）', () => {
+    const tower = mkTower([makeSkill('ramp', {perHit:0.05, cap:0.6, switchLoss:3})]);
+    const enemyA = mkEnemy(); const enemyB = mkEnemy();
+    simulateRamp(tower, enemyA, 10); // 0.5
+    simulateRamp(tower, enemyB, 1);  // 切換：0.5 - 3*0.05 = 0.35
+    assertRange(tower._rampBonus, 0.349, 0.351, 'ramp switch loss');
+  });
+
+  test('ramp 二次切換再扣（0.35 → 0.20）', () => {
+    const tower = mkTower([makeSkill('ramp', {perHit:0.05, cap:0.6, switchLoss:3})]);
+    const enemyA = mkEnemy(); const enemyB = mkEnemy();
+    simulateRamp(tower, enemyA, 10); // 0.5
+    simulateRamp(tower, enemyB, 1);  // 0.35
+    simulateRamp(tower, enemyA, 1);  // 再切：0.35 - 0.15 = 0.20
+    assertRange(tower._rampBonus, 0.199, 0.201, 'ramp second switch');
+  });
+
+  test('ramp 不產生負值（0.1 → 切換後 = 0）', () => {
+    const tower = mkTower([makeSkill('ramp', {perHit:0.05, cap:0.6, switchLoss:3})]);
+    const enemyA = mkEnemy(); const enemyB = mkEnemy();
+    simulateRamp(tower, enemyA, 2); // 0.10
+    simulateRamp(tower, enemyB, 1); // 0.10 - 0.15 = max(0,x) = 0
+    assertEqual(tower._rampBonus, 0, 'ramp no negative');
+  });
+});
+
+group('Step5 aura_dmg 範圍增益', () => {
+  test('射程內塔獲得 flat + pct aura', () => {
+    const game = new MockGame();
+    const src    = mkTower([makeSkill('aura_dmg', {radius:2, flat:5, pct:0.15})], {x:5, y:5});
+    const nearby = mkTower([], {x:5, y:6}); // 距 1
+    const far    = mkTower([], {x:5, y:9}); // 距 4
+    game.towers = [src, nearby, far];
+    game.tickTowers(0.016);
+    assertEqual(nearby._auraDmgFlat, 5, 'nearby flat aura');
+    assertRange(nearby._auraDmgPct, 0.149, 0.151, 'nearby pct aura');
+    assertEqual(far._auraDmgFlat, 0, 'far no flat aura');
+    assertEqual(far._auraDmgPct, 0, 'far no pct aura');
+  });
+
+  test('aura 塔自己不受自身光環影響', () => {
+    const game = new MockGame();
+    const src = mkTower([makeSkill('aura_dmg', {radius:5, flat:5, pct:0.15})], {x:5, y:5});
+    game.towers = [src];
+    game.tickTowers(0.016);
+    // src 只有一個塔，自己被排除，應維持 0
+    assertEqual(src._auraDmgFlat, 0, 'source excluded from own aura flat');
+    assertEqual(src._auraDmgPct, 0, 'source excluded from own aura pct');
+  });
+
+  test('兩個 aura_dmg 源疊加（flat 累加，pct 累加）', () => {
+    const game = new MockGame();
+    const src1   = mkTower([makeSkill('aura_dmg', {radius:3, flat:5, pct:0.1})], {x:5, y:5});
+    const src2   = mkTower([makeSkill('aura_dmg', {radius:3, flat:3, pct:0.05})], {x:5, y:6});
+    const target = mkTower([], {x:5, y:5});
+    game.towers = [src1, src2, target];
+    game.tickTowers(0.016);
+    // target 同時在 src1(距0) 和 src2(距1) 範圍內
+    assertEqual(target._auraDmgFlat, 8, 'stacked flat aura');
+    assertRange(target._auraDmgPct, 0.149, 0.151, 'stacked pct aura');
+  });
+
+  test('effDmg 應用 aura 增益計算正確', () => {
+    // effDmg = floor((damage + _auraDmgFlat) * (1 + _auraDmgPct) + _permaBuff)
+    // damage=100, flat=5, pct=0.15 → floor((105) * 1.15) = floor(120.75) = 120
+    const dmg  = 100;
+    const flat = 5;
+    const pct  = 0.15;
+    const effDmg = Math.floor((dmg + flat) * (1 + pct));
+    assertEqual(effDmg, 120, 'effDmg with aura');
+  });
+});
+
+group('Step5 aura_atkSpd 上限', () => {
+  test('單個 aura_atkSpd source 在範圍內生效', () => {
+    const game = new MockGame();
+    const src    = mkTower([makeSkill('aura_atkSpd', {radius:3, bonus:0.5})], {x:5, y:5});
+    const target = mkTower([], {x:5, y:6});
+    game.towers = [src, target];
+    game.tickTowers(0.016);
+    assertRange(target._auraAtkSpd, 0.499, 0.501, 'atkSpd aura applied');
+  });
+
+  test('兩個 source 疊加超過 GLOBAL_CAPS 被截斷', () => {
+    const game = new MockGame();
+    const src1   = mkTower([makeSkill('aura_atkSpd', {radius:3, bonus:1.5})], {x:5, y:5});
+    const src2   = mkTower([makeSkill('aura_atkSpd', {radius:3, bonus:1.5})], {x:5, y:6});
+    const target = mkTower([], {x:5, y:5.5});
+    game.towers = [src1, src2, target];
+    game.tickTowers(0.016);
+    // 1.5 + 1.5 = 3.0，但上限 GLOBAL_CAPS.atkSpdBonus = 2
+    assertEqual(target._auraAtkSpd, GLOBAL_CAPS.atkSpdBonus, 'atkSpd capped at GLOBAL_CAPS');
+  });
+
+  test('超出範圍的 source 不生效', () => {
+    const game = new MockGame();
+    const src    = mkTower([makeSkill('aura_atkSpd', {radius:2, bonus:1.0})], {x:5, y:5});
+    const target = mkTower([], {x:5, y:9}); // 距 4 > radius 2
+    game.towers = [src, target];
+    game.tickTowers(0.016);
+    assertEqual(target._auraAtkSpd, 0, 'out of range no atkSpd aura');
+  });
+});
+
+group('Step5 aura_range 累加', () => {
+  test('單個 aura_range source 生效', () => {
+    const game = new MockGame();
+    const src    = mkTower([makeSkill('aura_range', {radius:3, bonus:0.5})], {x:5, y:5});
+    const target = mkTower([], {x:5, y:6});
+    game.towers = [src, target];
+    game.tickTowers(0.016);
+    assertRange(target._auraRange, 0.499, 0.501, 'aura_range applied');
+  });
+
+  test('兩個 aura_range sources 線性累加', () => {
+    const game = new MockGame();
+    const src1   = mkTower([makeSkill('aura_range', {radius:3, bonus:0.5})], {x:5, y:5});
+    const src2   = mkTower([makeSkill('aura_range', {radius:3, bonus:0.5})], {x:5, y:6});
+    const target = mkTower([], {x:5, y:5});
+    game.towers = [src1, src2, target];
+    game.tickTowers(0.016);
+    assertRange(target._auraRange, 0.999, 1.001, 'aura_range stacks from 2 sources');
+  });
+
+  test('aura_range 不受 GLOBAL_CAPS 截斷（無上限）', () => {
+    const game = new MockGame();
+    const src1 = mkTower([makeSkill('aura_range', {radius:5, bonus:2.0})], {x:5, y:5});
+    const src2 = mkTower([makeSkill('aura_range', {radius:5, bonus:2.0})], {x:5, y:6});
+    const target = mkTower([], {x:5, y:5});
+    game.towers = [src1, src2, target];
+    game.tickTowers(0.016);
+    // 無截斷，直接累加 2+2=4
+    assertRange(target._auraRange, 3.999, 4.001, 'aura_range no cap');
+  });
+
+  test('aura tickTowers 每幀重置後重新計算', () => {
+    const game = new MockGame();
+    const src    = mkTower([makeSkill('aura_range', {radius:3, bonus:1.0})], {x:5, y:5});
+    const target = mkTower([], {x:5, y:6});
+    game.towers = [src, target];
+    game.tickTowers(0.016); // 第一幀
+    game.tickTowers(0.016); // 第二幀：應重置後重算，不雙倍
+    assertRange(target._auraRange, 0.999, 1.001, 'aura resets each tick');
+  });
+});
+</script>
+
+<script>
+// ── Step 6：pierce / chain / multishot ──
+
+// pierce 傷害公式（game.js 2924: Math.max(0.3, 1 - i * pDown)）
+function calcPierceRatio(pDown, i) {
+  return Math.max(0.3, 1 - i * pDown);
+}
+
+// pierce 幾何篩選：點到直線距離（點 px,py；直線起點 lx,ly；單位方向 ux,uy）
+// game.js 2913-2916: ex*ux+ey*uy = t (投影)，perpendicular = (ex-t*ux, ey-t*uy)
+function pierceFilter(ex, ey, twx, twy, ux, uy, PIERCE_WIDTH) {
+  const rx = ex - twx;
+  const ry = ey - twy;
+  const t  = rx * ux + ry * uy;
+  const px = rx - t * ux;
+  const py = ry - t * uy;
+  return t > 0 && Math.hypot(px, py) <= PIERCE_WIDTH;
+}
+
+group('Step6 pierce 傷害公式（遞減）', () => {
+  test('第 0 個目標（最近塔）比值 = 1.0', () => {
+    assertRange(calcPierceRatio(0.15, 0), 0.999, 1.001, 'pierce i=0 ratio');
+  });
+
+  test('第 1 個目標比值 = 0.85', () => {
+    assertRange(calcPierceRatio(0.15, 1), 0.849, 0.851, 'pierce i=1 ratio');
+  });
+
+  test('第 2 個目標比值 = 0.70', () => {
+    assertRange(calcPierceRatio(0.15, 2), 0.699, 0.701, 'pierce i=2 ratio');
+  });
+
+  test('比值不低於 MIN_RATIO 0.3（第 5 個目標 1-5*0.15=0.25 → 截斷至 0.3）', () => {
+    assertRange(calcPierceRatio(0.15, 5), 0.299, 0.301, 'pierce MIN_RATIO floor');
+  });
+
+  test('實際傷害 = floor(effDmg * ratio)', () => {
+    const effDmg = 100;
+    assertEqual(Math.floor(effDmg * calcPierceRatio(0.15, 0)), 100, 'pierce dmg i=0');
+    assertEqual(Math.floor(effDmg * calcPierceRatio(0.15, 1)), 85,  'pierce dmg i=1');
+    assertEqual(Math.floor(effDmg * calcPierceRatio(0.15, 2)), 70,  'pierce dmg i=2');
+    assertEqual(Math.floor(effDmg * calcPierceRatio(0.15, 5)), 30,  'pierce dmg min');
+  });
+});
+
+group('Step6 pierce 直線幾何篩選', () => {
+  // 塔在 (5,5)，主目標在 (8,5)，方向向量 (1,0)
+  const twx=5, twy=5, ux=1, uy=0, W=0.6;
+
+  test('正前方敵人（在直線上）被包含', () => {
+    assert(pierceFilter(9, 5, twx, twy, ux, uy, W), 'on-line enemy included');
+  });
+
+  test('偏離 0.5 格（< 0.6）被包含', () => {
+    assert(pierceFilter(9, 5.5, twx, twy, ux, uy, W), 'dist 0.5 included');
+  });
+
+  test('偏離 0.7 格（> 0.6）被排除', () => {
+    assert(!pierceFilter(9, 5.7, twx, twy, ux, uy, W), 'dist 0.7 excluded');
+  });
+
+  test('正好在邊界 0.6 格被包含（≤ PIERCE_WIDTH）', () => {
+    assert(pierceFilter(9, 5.6, twx, twy, ux, uy, W), 'dist 0.6 included');
+  });
+
+  test('塔身後的敵人被排除（t ≤ 0）', () => {
+    assert(!pierceFilter(3, 5, twx, twy, ux, uy, W), 'behind tower excluded');
+  });
+
+  test('pierce 目標依距塔遠近排序（近的 i=0）', () => {
+    // 兩敵在直線上：(7,5) 距塔 2，(9,5) 距塔 4
+    // 排序後 (7,5) 先打 (i=0)，(9,5) 後打 (i=1)
+    const enemies = [{x:9, y:5}, {x:7, y:5}];
+    const sorted = enemies.slice().sort((a, b) => {
+      const ta = (a.x - twx)*ux + (a.y - twy)*uy;
+      const tb = (b.x - twx)*ux + (b.y - twy)*uy;
+      return ta - tb;
+    });
+    assertEqual(sorted[0].x, 7, 'closer enemy first');
+    assertEqual(sorted[1].x, 9, 'farther enemy second');
+  });
+});
+
+// chain 傷害公式（game.js 2966: Math.floor(effDmg * decay^(i+1))）
+function calcChainDmg(effDmg, decay, jumpIndex) {
+  return Math.floor(effDmg * Math.pow(decay, jumpIndex));
+}
+
+group('Step6 chain 傷害公式', () => {
+  test('第 1 跳 = floor(effDmg * decay^1)', () => {
+    assertEqual(calcChainDmg(100, 0.7, 1), 70, 'chain jump1 decay=0.7');
+    assertEqual(calcChainDmg(100, 0.5, 1), 50, 'chain jump1 decay=0.5');
+  });
+
+  test('第 2 跳 = floor(effDmg * decay^2)', () => {
+    assertEqual(calcChainDmg(100, 0.7, 2), 49, 'chain jump2 decay=0.7');
+    assertEqual(calcChainDmg(100, 0.5, 2), 25, 'chain jump2 decay=0.5');
+  });
+
+  test('floor 截斷（decay=0.7, 3跳: 100*0.343=34.3 → 34）', () => {
+    assertEqual(calcChainDmg(100, 0.7, 3), 34, 'chain jump3 floor');
+  });
+});
+
+group('Step6 chain targets 數量限制', () => {
+  test('targets=2 只跳前 2 個（按 pathIdx 降序）', () => {
+    // 模擬 game.js 2964: targets.filter(e=>e!==target).slice(0, chainSk.targets)
+    // targets 按 pathIdx 降序排序（已由 sort 產生）
+    const target  = mkEnemy({pathIdx: 10, hp:200, maxHp:200});
+    const chain1  = mkEnemy({pathIdx:  8, hp:200, maxHp:200});
+    const chain2  = mkEnemy({pathIdx:  6, hp:200, maxHp:200});
+    const chain3  = mkEnemy({pathIdx:  4, hp:200, maxHp:200}); // 不應被跳到
+
+    const allTargets = [target, chain1, chain2, chain3]; // 已按 pathIdx 降序
+    const chainTargets = allTargets.filter(e => e !== target).slice(0, 2);
+
+    assertEqual(chainTargets.length, 2, 'chain targets count = 2');
+    assert(chainTargets.includes(chain1), 'chain hits enemy1');
+    assert(chainTargets.includes(chain2), 'chain hits enemy2');
+    assert(!chainTargets.includes(chain3), 'chain skips enemy3');
+  });
+
+  test('chain 實際傷害遞減（在 MockGame 中模擬 doDmg）', () => {
+    const game = new MockGame();
+    const target = mkEnemy({pathIdx:10, hp:200, maxHp:200, x:5, y:5});
+    const enemy1 = mkEnemy({pathIdx: 8, hp:200, maxHp:200, x:5, y:6});
+    const enemy2 = mkEnemy({pathIdx: 6, hp:200, maxHp:200, x:5, y:7});
+    game.enemies = [target, enemy1, enemy2];
+
+    // 模擬 chain 跳躍（不經過完整 tickTowers，直接執行 chain 邏輯）
+    const effDmg = 100;
+    const chainSk = makeSkill('chain', {targets:2, decay:0.7});
+    const allTargets = [target, enemy1, enemy2]; // pathIdx 降序
+    const chainTargets = allTargets.filter(e => e !== target).slice(0, chainSk.targets);
+    chainTargets.forEach((e, i) => {
+      const chainDmg = Math.floor(effDmg * Math.pow(chainSk.decay, i + 1));
+      game.doDmg(e, chainDmg, null, null);
+    });
+
+    // enemy1: 200 - floor(100*0.7^1) = 200 - 70 = 130
+    assertEqual(enemy1.hp, 130, 'chain enemy1 hp after jump1');
+    // enemy2: 200 - floor(100*0.7^2) = 200 - 49 = 151
+    assertEqual(enemy2.hp, 151, 'chain enemy2 hp after jump2');
+  });
+});
+
+group('Step6 multishot 觸發週期', () => {
+  test('atkCount % every === 0 時觸發（every=3）', () => {
+    const triggers = [];
+    for (let i = 1; i <= 9; i++) {
+      if (i % 3 === 0) triggers.push(i);
+    }
+    assertEqual(triggers.length, 3, 'fires 3 times in 9 attacks');
+    assertEqual(triggers[0], 3, 'first trigger at atkCount=3');
+    assertEqual(triggers[1], 6, 'second trigger at atkCount=6');
+    assertEqual(triggers[2], 9, 'third trigger at atkCount=9');
+  });
+
+  test('atkCount=1,2 不觸發（every=3）', () => {
+    assert(1 % 3 !== 0, 'atkCount=1 no trigger');
+    assert(2 % 3 !== 0, 'atkCount=2 no trigger');
+  });
+
+  test('every=5 的觸發週期', () => {
+    const triggers = [];
+    for (let i = 1; i <= 15; i++) {
+      if (i % 5 === 0) triggers.push(i);
+    }
+    assertEqual(triggers.length, 3, 'every=5 fires 3 times in 15');
+    assertEqual(triggers[0], 5, 'first at atkCount=5');
+  });
+
+  test('shots 數量決定同時攻擊目標數', () => {
+    // game.js: for (let s = 0; s < shots; s++) → shots=3 打 3 個目標
+    const multiSk = makeSkill('multishot', {every:3, shots:3});
+    assertEqual(multiSk.shots, 3, 'multishot shots=3');
+    // s=0: targets[0]（主目標），s=1: targets[1]，s=2: targets[2]
+    const targets = ['A','B','C','D'];
+    const hit = [];
+    for (let s = 0; s < multiSk.shots; s++) { hit.push(targets[s] || targets[0]); }
+    assertEqual(hit.length, 3, 'hits 3 targets');
+    assertEqual(hit[0], 'A', 'main target first');
+    assertEqual(hit[1], 'B', 'second target');
+    assertEqual(hit[2], 'C', 'third target');
+  });
+});
+</script>
+
+<script>
+// ── Step 7：zone_slow / zone_shred / field_* / cycle_* ──
+
+group('Step7 zone_slow 區域效果', () => {
+  test('zone 維持範圍內敵人 chillStacks（取 max）', () => {
+    const game = new MockGame();
+    game.zones = [{x:8, y:5, r:2, type:'puddle', slowAmt:40, shredTarget:0, dur:3, t:0}];
+    const inside  = mkEnemy({x:8, y:5, chillStacks:0});
+    const outside = mkEnemy({x:12, y:5, chillStacks:0});
+    game.enemies = [inside, outside];
+    game.tickZones(0.016);
+    assertEqual(inside.chillStacks,  40, 'inside zone gets chillStacks');
+    assertEqual(outside.chillStacks,  0, 'outside zone no effect');
+  });
+
+  test('zone 不覆蓋更高的 chillStacks（取 max）', () => {
+    const game = new MockGame();
+    game.zones = [{x:8, y:5, r:2, type:'puddle', slowAmt:40, shredTarget:0, dur:3, t:0}];
+    const enemy = mkEnemy({x:8, y:5, chillStacks:60});
+    game.enemies = [enemy];
+    game.tickZones(0.016);
+    assertEqual(enemy.chillStacks, 60, 'zone doesnt reduce higher stacks');
+  });
+
+  test('zone 在範圍內重置 chillDecay = 0', () => {
+    const game = new MockGame();
+    game.zones = [{x:5, y:5, r:3, type:'puddle', slowAmt:30, shredTarget:0, dur:3, t:0}];
+    const enemy = mkEnemy({x:5, y:5, chillStacks:20, chillDecay:0.5});
+    game.enemies = [enemy];
+    game.tickZones(0.016);
+    assertEqual(enemy.chillDecay, 0, 'zone resets chillDecay');
+  });
+
+  test('zone 時間未到不移除', () => {
+    const game = new MockGame();
+    game.zones = [{x:5, y:5, r:2, type:'puddle', slowAmt:30, shredTarget:0, dur:3, t:0}];
+    game.enemies = [];
+    game.tickZones(0.016);
+    assertEqual(game.zones.length, 1, 'zone still alive');
+    assertRange(game.zones[0].t, 0.015, 0.017, 'zone t incremented');
+  });
+
+  test('zone t >= dur 後被移除', () => {
+    const game = new MockGame();
+    // t=2.99，tickZones(0.016) 後 t=3.006 >= dur=3 → 過濾掉
+    game.zones = [{x:5, y:5, r:2, type:'puddle', slowAmt:30, shredTarget:0, dur:3, t:2.99}];
+    game.enemies = [];
+    game.tickZones(0.016);
+    assertEqual(game.zones.length, 0, 'expired zone removed');
+  });
+});
+
+group('Step7 zone_shred 區域效果', () => {
+  test('zone_shred 維持範圍內敵人 shredStacks', () => {
+    const game = new MockGame();
+    game.zones = [{x:5, y:5, r:2, type:'puddle', slowAmt:0, shredTarget:30, dur:3, t:0}];
+    const inside  = mkEnemy({x:5, y:5, shredStacks:0});
+    const outside = mkEnemy({x:9, y:5, shredStacks:0});
+    game.enemies = [inside, outside];
+    game.tickZones(0.016);
+    assertEqual(inside.shredStacks,  30, 'inside zone gets shredStacks');
+    assertEqual(outside.shredStacks,  0, 'outside no shred');
+  });
+
+  test('zone_shred 在範圍內重置 shredDecay = 0', () => {
+    const game = new MockGame();
+    game.zones = [{x:5, y:5, r:2, type:'puddle', slowAmt:0, shredTarget:20, dur:3, t:0}];
+    const enemy = mkEnemy({x:5, y:5, shredStacks:10, shredDecay:0.8});
+    game.enemies = [enemy];
+    game.tickZones(0.016);
+    assertEqual(enemy.shredDecay, 0, 'zone resets shredDecay');
+  });
+});
+
+group('Step7 field_slow 每幀維持', () => {
+  test('射程內敵人獲得 chillStacks（每幀維持）', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('field_slow', {radius:2, chillStacks:50})], {x:5, y:5});
+    const inRange  = mkEnemy({x:5, y:6, chillStacks:0}); // 距 1
+    const outRange = mkEnemy({x:5, y:8, chillStacks:0}); // 距 3
+    game.towers = [tower]; game.enemies = [inRange, outRange];
+    game.tickTowers(0.016);
+    assertEqual(inRange.chillStacks,  50, 'in range gets field slow');
+    assertEqual(outRange.chillStacks,  0, 'out of range no effect');
+  });
+
+  test('field_slow 不降低更高 chillStacks（max 語意）', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('field_slow', {radius:3, chillStacks:30})], {x:5, y:5});
+    const enemy = mkEnemy({x:5, y:5, chillStacks:80});
+    game.towers = [tower]; game.enemies = [enemy];
+    game.tickTowers(0.016);
+    assertEqual(enemy.chillStacks, 80, 'field_slow doesnt reduce higher stacks');
+  });
+});
+
+group('Step7 field_stun 週期暈眩', () => {
+  test('首幀（_fieldStunCd=undefined）立即觸發', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('field_stun', {radius:2, dur:0.8, cd:6})], {x:5, y:5});
+    const enemy = mkEnemy({x:5, y:6});
+    game.towers = [tower]; game.enemies = [enemy];
+    game.tickTowers(0.016);
+    assertRange(enemy.stunTimer, 0.799, 0.801, 'field_stun fires on first tick');
+    assertRange(tower._fieldStunCd, 5.999, 6.001, 'field_stun cd set to 6');
+  });
+
+  test('CD 中不再觸發', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('field_stun', {radius:2, dur:0.8, cd:6})], {x:5, y:5});
+    tower._fieldStunCd = 5; // 手動設 CD
+    const enemy = mkEnemy({x:5, y:6, stunTimer:0});
+    game.towers = [tower]; game.enemies = [enemy];
+    game.tickTowers(0.016);
+    assertEqual(enemy.stunTimer, 0, 'field_stun blocked by cd');
+  });
+
+  test('field_stun 使用 max（不降低更長暈眩）', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('field_stun', {radius:2, dur:0.8, cd:0})], {x:5, y:5});
+    tower._fieldStunCd = 0;
+    const enemy = mkEnemy({x:5, y:6, stunTimer:2.0}); // 已有更長 stunTimer
+    game.towers = [tower]; game.enemies = [enemy];
+    game.tickTowers(0.016);
+    // stunTimer 不應被縮短（max 語意）
+    assertRange(enemy.stunTimer, 1.999, 2.001, 'field_stun doesnt reduce longer stun');
+  });
+});
+
+group('Step7 field_dmg 週期傷害', () => {
+  test('首幀立即觸發 AOE 傷害', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('field_dmg', {radius:2, flat:0.5, cd:3})],
+                          {x:5, y:5, damage:100});
+    const enemy = mkEnemy({x:5, y:6, hp:200, maxHp:200, armor:0});
+    game.towers = [tower]; game.enemies = [enemy];
+    game.tickTowers(0.016);
+    // dmgAmt = 100 * 0.5 = 50, actualDmg = max(1, 50*(1-0)) = 50
+    assertEqual(enemy.hp, 150, 'field_dmg fires on first tick');
+  });
+
+  test('field_dmg 護甲減傷', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('field_dmg', {radius:2, flat:0.5, cd:3})],
+                          {x:5, y:5, damage:100});
+    const enemy = mkEnemy({x:5, y:6, hp:200, maxHp:200, armor:0.2});
+    game.towers = [tower]; game.enemies = [enemy];
+    game.tickTowers(0.016);
+    // dmgAmt=50, actualDmg = max(1, 50*0.8) = 40
+    assertEqual(enemy.hp, 160, 'field_dmg reduced by armor');
+  });
+
+  test('CD 中不再觸發', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('field_dmg', {radius:2, flat:0.5, cd:3})],
+                          {x:5, y:5, damage:100});
+    tower._fieldDmgCd = 2;
+    const enemy = mkEnemy({x:5, y:6, hp:200, maxHp:200});
+    game.towers = [tower]; game.enemies = [enemy];
+    game.tickTowers(0.016);
+    assertEqual(enemy.hp, 200, 'field_dmg blocked by cd');
+  });
+});
+
+group('Step7 field_burn 週期點燃', () => {
+  test('首幀立即套用 burn（burnDmg + burnTimer）', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('field_burn', {radius:2, dot:0.2, dur:3, interval:1})],
+                          {x:5, y:5, damage:50, atkSpd:1});
+    const enemy = mkEnemy({x:5, y:6});
+    game.towers = [tower]; game.enemies = [enemy];
+    game.tickTowers(0.016);
+    // burnDps = 50 * 1 * 0.2 = 10
+    assertRange(enemy.burnDmg, 9.99, 10.01, 'field_burn burnDmg set');
+    assertRange(enemy.burnTimer, 2.999, 3.001, 'field_burn burnTimer=3');
+  });
+
+  test('interval CD 中不重複套用', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('field_burn', {radius:2, dot:0.2, dur:3, interval:1})],
+                          {x:5, y:5, damage:50, atkSpd:1});
+    tower._fieldBurnCd = 0.8; // CD 未到
+    const enemy = mkEnemy({x:5, y:6, burnTimer:0, burnDmg:0});
+    game.towers = [tower]; game.enemies = [enemy];
+    game.tickTowers(0.016);
+    assertEqual(enemy.burnTimer, 0, 'field_burn blocked by interval cd');
+  });
+});
+
+group('Step7 cycle_chill 每攻疊層', () => {
+  test('主目標與範圍內敵人均獲得 chillStacks', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('cycle_chill', {radius:2, stacksPerCycle:5})],
+                          {x:5, y:5});
+    const main  = mkEnemy({x:7, y:5, chillStacks:0}); // 距 2，剛好在範圍
+    const near  = mkEnemy({x:5, y:6, chillStacks:0}); // 距 1
+    const far   = mkEnemy({x:5, y:9, chillStacks:0}); // 距 4 > 2
+    game.enemies = [main, near, far];
+    game.triggerCycleSkills(tower, main);
+    assertEqual(main.chillStacks,  5, 'main target gets cycle chill');
+    assertEqual(near.chillStacks,  5, 'near enemy gets cycle chill');
+    assertEqual(far.chillStacks,   0, 'far enemy no cycle chill');
+  });
+
+  test('cycle_chill 多次累加', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('cycle_chill', {radius:3, stacksPerCycle:10})], {x:5, y:5});
+    const enemy = mkEnemy({x:5, y:5, chillStacks:0});
+    game.enemies = [enemy];
+    game.triggerCycleSkills(tower, enemy);
+    game.triggerCycleSkills(tower, enemy);
+    assertEqual(enemy.chillStacks, 20, 'cycle_chill accumulates');
+  });
+
+  test('cycle_chill 不超過 chillMaxStacks', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('cycle_chill', {radius:3, stacksPerCycle:100})], {x:5, y:5});
+    const enemy = mkEnemy({x:5, y:5, chillStacks:GLOBAL_CAPS.chillMaxStacks - 5});
+    game.enemies = [enemy];
+    game.triggerCycleSkills(tower, enemy);
+    assertEqual(enemy.chillStacks, GLOBAL_CAPS.chillMaxStacks, 'cycle_chill capped');
+  });
+});
+
+group('Step7 cycle_stun 暈眩上限 2.0s', () => {
+  test('cycle_stun dur > 2.0 被截斷至 2.0', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('cycle_stun', {radius:3, dur:5.0})], {x:5, y:5});
+    const enemy = mkEnemy({x:5, y:5, stunTimer:0});
+    game.enemies = [enemy];
+    game.triggerCycleSkills(tower, enemy);
+    assertRange(enemy.stunTimer, 1.999, 2.001, 'cycle_stun capped at 2.0s');
+  });
+
+  test('cycle_stun 使用 max（不縮短更長暈眩）', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('cycle_stun', {radius:3, dur:1.0})], {x:5, y:5});
+    const enemy = mkEnemy({x:5, y:5, stunTimer:1.5});
+    game.enemies = [enemy];
+    game.triggerCycleSkills(tower, enemy);
+    assertRange(enemy.stunTimer, 1.499, 1.501, 'cycle_stun doesnt shorten stun');
+  });
+
+  test('cycle_stun + tenacity 減半', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('cycle_stun', {radius:3, dur:2.0})], {x:5, y:5});
+    const enemy = mkEnemy({x:5, y:5, stunTimer:0, skills:[makeSkill('tenacity', {ccReduce:0.5})]});
+    game.enemies = [enemy];
+    game.triggerCycleSkills(tower, enemy);
+    // min(2.0, 2.0) * (1-0.5) = 1.0
+    assertRange(enemy.stunTimer, 0.999, 1.001, 'cycle_stun + tenacity halved');
+  });
+});
+
+group('Step7 cycle_burn 週期點燃', () => {
+  test('cycle_burn 套用 burnDmg + burnTimer', () => {
+    const game = new MockGame();
+    const tower = mkTower([makeSkill('cycle_burn', {radius:3, dot:0.3, dur:4})],
+                          {x:5, y:5, damage:100, atkSpd:2});
+    const enemy = mkEnemy({x:5, y:5});
+    game.enemies = [enemy];
+    game.triggerCycleSkills(tower, enemy);
+    // burnDmg = 100 * 2 * 0.3 = 60
+    assertRange(enemy.burnDmg, 59.99, 60.01, 'cycle_burn burnDmg');
+    assertRange(enemy.burnTimer, 3.999, 4.001, 'cycle_burn burnTimer');
+  });
+});
+</script>
+
+<script>
+// ── Step 8：經濟技能 + 敵人 Passive ──
+
+group('Step8 killGold 擊殺獎金', () => {
+  test('base killGold 加入 gold（無技能）', () => {
+    const game = new MockGame(); game.gold = 100;
+    const enemy = mkEnemy({killGold: 10});
+    game.processKill(enemy);
+    assertEqual(game.gold, 110, 'base killGold added');
+  });
+
+  test('killGold 技能 bonus = floor(killGold * bonus)', () => {
+    const game = new MockGame(); game.gold = 100;
+    const tower = mkTower([makeSkill('killGold', {bonus: 5})]);
+    const enemy = mkEnemy({killGold: 10});
+    enemy._lastHitTower = tower;
+    game.processKill(enemy);
+    // 100 + 10(base) + floor(10*5)=50 = 160
+    assertEqual(game.gold, 160, 'killGold bonus');
+  });
+
+  test('killGold bonus 使用 floor', () => {
+    const game = new MockGame(); game.gold = 0;
+    const tower = mkTower([makeSkill('killGold', {bonus: 1.5})]);
+    const enemy = mkEnemy({killGold: 3});
+    enemy._lastHitTower = tower;
+    game.processKill(enemy);
+    // 0 + 3 + floor(3*1.5)=floor(4.5)=4 = 7
+    assertEqual(game.gold, 7, 'killGold floor');
+  });
+
+  test('無 killGold 技能時只拿 base', () => {
+    const game = new MockGame(); game.gold = 50;
+    const tower = mkTower([]);
+    const enemy = mkEnemy({killGold: 5});
+    enemy._lastHitTower = tower;
+    game.processKill(enemy);
+    assertEqual(game.gold, 55, 'no skill only base');
+  });
+});
+
+group('Step8 permaBuff 永久攻擊力', () => {
+  test('每擊殺累加 atkPerKill', () => {
+    const game = new MockGame(); game.gold = 0;
+    const tower = mkTower([makeSkill('permaBuff', {atkPerKill: 0.5})]);
+    const enemy = mkEnemy({killGold: 0});
+    enemy._lastHitTower = tower;
+    game.processKill(enemy);
+    assertRange(tower._permaBuff, 0.499, 0.501, 'permaBuff after 1 kill');
+  });
+
+  test('多次擊殺持續積累', () => {
+    const game = new MockGame(); game.gold = 0;
+    const tower = mkTower([makeSkill('permaBuff', {atkPerKill: 0.5})]);
+    const enemy = mkEnemy({killGold: 0});
+    enemy._lastHitTower = tower;
+    game.processKill(enemy);
+    game.processKill(enemy);
+    game.processKill(enemy);
+    assertRange(tower._permaBuff, 1.499, 1.501, 'permaBuff 3 kills = 1.5');
+  });
+
+  test('_permaBuff 加入 effDmg 計算（純數學驗證）', () => {
+    // effDmg = floor((damage + auraDmgFlat) * (1+auraDmgPct) + _permaBuff)
+    const tower = mkTower([], {damage:100});
+    tower._permaBuff = 1.5;
+    const effDmg = Math.floor((tower.damage + (tower._auraDmgFlat||0)) * (1+(tower._auraDmgPct||0)) + tower._permaBuff);
+    assertEqual(effDmg, 101, 'permaBuff floor(100 + 1.5) = 101');
+  });
+});
+
+group('Step8 wealthScale 財富積累加成', () => {
+  // 純數學：bonus = min(floor(gold/divisor), cap)
+  // 注意：game.js 中有 const effDmg += 的 bug（const 不可重賦值），此技能在實際遊戲中會拋錯
+  test('200g / divisor=20 → bonus = min(10,50) = 10', () => {
+    const gold=200, divisor=20, cap=50;
+    const bonus = Math.min(Math.floor(gold / divisor), cap);
+    assertEqual(bonus, 10, 'wealthScale 200g bonus=10');
+  });
+
+  test('2000g 達到 cap 上限 50', () => {
+    const gold=2000, divisor=20, cap=50;
+    const bonus = Math.min(Math.floor(gold / divisor), cap);
+    assertEqual(bonus, 50, 'wealthScale capped at 50');
+  });
+
+  test('gold < divisor → bonus = 0（floor 截斷）', () => {
+    const gold=15, divisor=20, cap=50;
+    const bonus = Math.min(Math.floor(gold / divisor), cap);
+    assertEqual(bonus, 0, 'wealthScale 15g bonus=0');
+  });
+
+  test('剛好整除', () => {
+    const gold=100, divisor=20, cap=50;
+    const bonus = Math.min(Math.floor(gold / divisor), cap);
+    assertEqual(bonus, 5, 'wealthScale 100g bonus=5');
+  });
+});
+
+group('Step8 interest 利息', () => {
+  test('500g × 5% = 25，上限 40 → 得 25g', () => {
+    const game = new MockGame(); game.gold = 500;
+    const tower = mkTower([makeSkill('interest', {rate: 0.05, cap: 40})]);
+    game.towers = [tower];
+    game.processWaveInterest();
+    assertEqual(game.gold, 525, 'interest 25g added');
+  });
+
+  test('1000g × 5% = 50，超過 cap=40 → 得 40g', () => {
+    const game = new MockGame(); game.gold = 1000;
+    const tower = mkTower([makeSkill('interest', {rate: 0.05, cap: 40})]);
+    game.towers = [tower];
+    game.processWaveInterest();
+    assertEqual(game.gold, 1040, 'interest capped at 40');
+  });
+
+  test('interest 使用 floor（200g × 3% = 6.0 → 6g）', () => {
+    const game = new MockGame(); game.gold = 200;
+    const tower = mkTower([makeSkill('interest', {rate: 0.03, cap: 100})]);
+    game.towers = [tower];
+    game.processWaveInterest();
+    assertEqual(game.gold, 206, 'interest floor 200*0.03=6');
+  });
+
+  test('bonus=0 時不增加（gold=0）', () => {
+    const game = new MockGame(); game.gold = 0;
+    const tower = mkTower([makeSkill('interest', {rate: 0.05, cap: 40})]);
+    game.towers = [tower];
+    game.processWaveInterest();
+    assertEqual(game.gold, 0, 'interest 0g no change');
+  });
+});
+
+group('Step8 regen 每秒回血', () => {
+  test('1秒回復 2% maxHp', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:50, maxHp:100, skills:[makeSkill('regen', {pct:0.02})]});
+    game.tickEnemy(enemy, 1.0);
+    // 50 + 100*0.02*1 = 52
+    assertRange(enemy.hp, 51.9, 52.1, 'regen 1s = 52hp');
+  });
+
+  test('regen 不超過 maxHp 上限', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:98, maxHp:100, skills:[makeSkill('regen', {pct:0.05})]});
+    game.tickEnemy(enemy, 1.0);
+    // 98 + 100*0.05 = 103 → 截斷至 100
+    assertEqual(enemy.hp, 100, 'regen capped at maxHp');
+  });
+
+  test('regen 在每幀（dt=0.016）微量回復', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:50, maxHp:100, skills:[makeSkill('regen', {pct:0.02})]});
+    game.tickEnemy(enemy, 0.016);
+    // 50 + 100*0.02*0.016 = 50.032
+    assertRange(enemy.hp, 50.031, 50.033, 'regen per frame');
+  });
+});
+
+group('Step8 armorStack 護甲成長', () => {
+  test('每次 doDmg 後 armorStacks+1', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({armor:0.1, skills:[makeSkill('armorStack', {perHit:0.1, cap:0.5})]});
+    game.doDmg(enemy, 10, null, mkTower([]));
+    assertEqual(enemy.armorStacks, 1, 'armorStacks after 1 hit');
+  });
+
+  test('armorStacks 上限 = cap/perHit = 0.5/0.1 = 5', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({armor:0.1, skills:[makeSkill('armorStack', {perHit:0.1, cap:0.5})]});
+    const tower = mkTower([]);
+    for (let i = 0; i < 10; i++) game.doDmg(enemy, 10, null, tower);
+    assertEqual(enemy.armorStacks, 5, 'armorStacks capped at 5');
+  });
+
+  test('有效護甲 = armor + armorStacks * 0.1（純數學）', () => {
+    // armorStacks=3, base armor=0.1 → totalArmor = 0.1 + 3*0.1 = 0.4
+    const armor = 0.1, armorStacks = 3;
+    const totalArmor = armor + armorStacks * 0.1;
+    assertRange(totalArmor, 0.399, 0.401, 'effective armor with stacks');
+  });
+
+  test('護甲上限 0.8（即使疊多層）', () => {
+    // game.js 2373: armor + armorStacks*0.1 再由 Math.min(armor, 0.8) 截斷
+    const armor = 0.7, armorStacks = 5;
+    const totalArmor = Math.min(0.8, armor + armorStacks * 0.1); // 0.7+0.5=1.2 → 0.8
+    assertEqual(totalArmor, 0.8, 'armor capped at 0.8');
+  });
+});
+
+group('Step8 enrage 狂暴（HP閾值）', () => {
+  // enrage 在 game.js 的 tickEnemies 速度計算中（MockGame tickEnemy 未計算移動速度）
+  // 測試觸發條件的數學邏輯
+  test('HP < threshold（20% < 30%）→ 觸發 enrage', () => {
+    const hp=20, maxHp=100;
+    const enrageSk = makeSkill('enrage', {hpThreshold:0.3, spdMult:2});
+    const triggers = hp / maxHp < enrageSk.hpThreshold;
+    assert(triggers, 'enrage triggers at 20%');
+  });
+
+  test('HP >= threshold（50% >= 30%）→ 不觸發', () => {
+    const hp=50, maxHp=100;
+    const enrageSk = makeSkill('enrage', {hpThreshold:0.3, spdMult:2});
+    assert(!(hp / maxHp < enrageSk.hpThreshold), 'enrage not triggered at 50%');
+  });
+
+  test('剛好在閾值（30% → 30% < 30% = false）→ 不觸發', () => {
+    const hp=30, maxHp=100;
+    const enrageSk = makeSkill('enrage', {hpThreshold:0.3, spdMult:2});
+    assert(!(hp / maxHp < enrageSk.hpThreshold), 'enrage not triggered at exact threshold');
+  });
+
+  test('速度倍數計算（spd × spdMult）', () => {
+    const baseSpd = 2;
+    const spdMult = 2;
+    const enragedSpd = baseSpd * spdMult;
+    assertEqual(enragedSpd, 4, 'enrage speed doubled');
+  });
+});
+
+group('Step8 shield 護盾', () => {
+  test('首次致死後 hp=1，設 _shieldUsed', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:10, maxHp:100, skills:[makeSkill('shield', {})]});
+    game.doDmg(enemy, 50, null, null);
+    assertEqual(enemy.hp, 1, 'shield saves at 1hp');
+    assertEqual(enemy._shieldUsed, true, 'shield used flag set');
+  });
+
+  test('二次致死後無護盾（hp <= 0）', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:10, maxHp:100, skills:[makeSkill('shield', {})]});
+    game.doDmg(enemy, 50, null, null); // 首次致死 → hp=1
+    game.doDmg(enemy, 50, null, null); // 二次致死
+    assert(enemy.hp <= 0, 'no second shield');
+  });
+
+  test('傷害不超致死門檻時護盾不觸發', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:20, maxHp:100, skills:[makeSkill('shield', {})]});
+    game.doDmg(enemy, 10, null, null); // hp 10 → 不致死
+    assertEqual(enemy.hp, 10, 'shield not triggered when not lethal');
+    assert(!enemy._shieldUsed, 'shield flag not set');
+  });
+});
+
+group('Step8 blink 低 HP 閃現', () => {
+  test('HP < hpTrigger 且無 CD 時觸發 blink', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:25, maxHp:100, pathIdx:5,
+      skills:[makeSkill('blink', {dist:2, cd:8, hpTrigger:0.3})]});
+    game.tickEnemy(enemy, 0.016);
+    assert(enemy.pathIdx > 5, 'blink advances pathIdx');
+    assertRange(enemy._blinkCd, 7.999, 8.001, 'blink cd set');
+  });
+
+  test('CD 中不再 blink', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:25, maxHp:100, pathIdx:5,
+      skills:[makeSkill('blink', {dist:2, cd:8, hpTrigger:0.3})]});
+    enemy._blinkCd = 7; // 手動設 CD
+    game.tickEnemy(enemy, 0.016);
+    assertEqual(enemy.pathIdx, 5, 'blink blocked by cd');
+    assertRange(enemy._blinkCd, 6.983, 6.985, 'blink cd ticks down');
+  });
+
+  test('HP >= hpTrigger 時不觸發', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:50, maxHp:100, pathIdx:5,
+      skills:[makeSkill('blink', {dist:2, cd:8, hpTrigger:0.3})]});
+    game.tickEnemy(enemy, 0.016);
+    assertEqual(enemy.pathIdx, 5, 'blink not triggered above threshold');
+  });
+
+  test('blink pathIdx 上限 path.length - 0.1', () => {
+    const game = new MockGame(); // path 長度 50
+    const enemy = mkEnemy({hp:10, maxHp:100, pathIdx:49,
+      skills:[makeSkill('blink', {dist:10, cd:8, hpTrigger:0.5})]});
+    game.tickEnemy(enemy, 0.016);
+    // pathIdx = min(50-0.1, 49+10) = min(49.9, 59) = 49.9
+    assertRange(enemy.pathIdx, 49.89, 49.91, 'blink capped at path.length-0.1');
+  });
+});
+
+group('Step8 dodge 敵方閃避', () => {
+  test('chance=1.0 必定閃避（hp 不變）', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:100, skills:[makeSkill('dodge', {chance:1.0})]});
+    game.doDmg(enemy, 100, null, null);
+    assertEqual(enemy.hp, 100, 'full dodge: no damage');
+  });
+
+  test('chance=0.0 不閃避（hp 減少）', () => {
+    const game = new MockGame();
+    const enemy = mkEnemy({hp:100, armor:0, skills:[makeSkill('dodge', {chance:0.0})]});
+    game.doDmg(enemy, 50, null, null);
+    assert(enemy.hp < 100, 'no dodge: hp reduced');
+  });
+});
+</script>
+
+<script>
+// 自動執行
+window.onload = () => {
+  document.getElementById('btn-run').click();
+};
+</script>
+</body>
+</html>

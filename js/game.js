@@ -2788,6 +2788,28 @@ class Game {
       }
     }
 
+    // Field aura 型：以塔為中心，每幀維持範圍內敵人的 debuff stacks
+    for (const tw of this.towers) {
+      const fSlow  = getSkill(tw, 'field_slow');
+      const fShred = getSkill(tw, 'field_shred');
+      const fVuln  = getSkill(tw, 'field_vuln');
+      if (fSlow) {
+        this.getEnemiesNear(tw.x, tw.y, fSlow.radius).forEach(e => {
+          e.chillStacks = Math.max(e.chillStacks || 0, fSlow.chillStacks); e.chillDecay = 0;
+        });
+      }
+      if (fShred) {
+        this.getEnemiesNear(tw.x, tw.y, fShred.radius).forEach(e => {
+          e.shredStacks = Math.max(e.shredStacks || 0, fShred.shredStacks); e.shredDecay = 0;
+        });
+      }
+      if (fVuln) {
+        this.getEnemiesNear(tw.x, tw.y, fVuln.radius).forEach(e => {
+          e.vulnStacks = Math.max(e.vulnStacks || 0, fVuln.vulnStacks); e.vulnDecay = 0;
+        });
+      }
+    }
+
     for (const tw of this.towers) {
       // cooldown ticks
       if (tw._killRushTimer > 0) tw._killRushTimer -= dt;
@@ -2814,27 +2836,95 @@ class Game {
         if (targets.length === 0) { tw.atkTimer = 0; break; }
         const target = targets[0];
 
+        // ── cycle_* 攻速同步場效應（有目標才觸發）──
+        const cycleStun  = getSkill(tw, 'cycle_stun');
+        const cycleChill = getSkill(tw, 'cycle_chill');
+        const cycleShred = getSkill(tw, 'cycle_shred');
+        const cycleVuln  = getSkill(tw, 'cycle_vuln');
+        const cycleBurn  = getSkill(tw, 'cycle_burn');
+        if (cycleStun || cycleChill || cycleShred || cycleVuln || cycleBurn) {
+          const _cycleEffects = [
+            cycleStun  && { sk: cycleStun,  type: 'stun',  color: '#ffdc32' },
+            cycleChill && { sk: cycleChill, type: 'chill', color: '#64c8ff' },
+            cycleShred && { sk: cycleShred, type: 'shred', color: '#c87832' },
+            cycleVuln  && { sk: cycleVuln,  type: 'vuln',  color: '#dc50b4' },
+            cycleBurn  && { sk: cycleBurn,  type: 'burn',  color: '#ff5000' },
+          ].filter(Boolean);
+          for (const { sk, type, color } of _cycleEffects) {
+            const nearby = this.getEnemiesNear(tw.x, tw.y, sk.radius);
+            if (nearby.length === 0) continue;
+            nearby.forEach(e => {
+              const ccMult = hasSkill(e, 'tenacity') ? (1 - getSkill(e, 'tenacity').ccReduce) : 1;
+              if (type === 'stun') {
+                e.stunTimer = Math.max(e.stunTimer || 0, Math.min(sk.dur, 2.0) * ccMult);
+              } else if (type === 'chill') {
+                e.chillStacks = Math.min((e.chillStacks || 0) + sk.stacksPerCycle, GLOBAL_CAPS.chillMaxStacks);
+              } else if (type === 'shred') {
+                e.shredStacks = Math.min((e.shredStacks || 0) + sk.stacksPerCycle, GLOBAL_CAPS.shredMaxStacks);
+              } else if (type === 'vuln') {
+                e.vulnStacks = Math.min((e.vulnStacks || 0) + sk.stacksPerCycle, GLOBAL_CAPS.vulnMaxStacks);
+              } else if (type === 'burn') {
+                e.burnDmg = (tw.damage || 10) * tw.atkSpd * sk.dot;
+                e.burnTimer = sk.dur;
+              }
+            });
+            this.effects.push({ x: tw.x, y: tw.y, r: sk.radius, type: 'ring', color, dur: 0.25, t: 0 });
+          }
+        }
+        // ── cycle_* end ──
+
         tw.atkCount = (tw.atkCount || 0) + 1;
         // aura 傷害加成
-        const effDmg = Math.floor((tw.damage + (tw._auraDmgFlat || 0)) * (1 + (tw._auraDmgPct || 0)) + (tw._permaBuff || 0));
+        let effDmg = Math.floor((tw.damage + (tw._auraDmgFlat || 0)) * (1 + (tw._auraDmgPct || 0)) + (tw._permaBuff || 0));
 
         // ramp: 連攻同目標攻速提升
         if (rampSk) {
           if (tw._rampTarget === target) {
             tw._rampBonus = Math.min(rampSk.cap, (tw._rampBonus || 0) + rampSk.perHit);
           } else {
-            tw._rampTarget = target; tw._rampBonus = 0;
+            tw._rampTarget = target;
+            tw._rampBonus = Math.max(0, (tw._rampBonus || 0) - (rampSk.switchLoss || 0) * rampSk.perHit);
           }
         }
 
-        // pierce: 穿透射程內全體，每穿一體增傷
+        // wealthScale：財富積累傷害加成
+        const wsSk = getSkill(tw, 'wealthScale');
+        if (wsSk) {
+          effDmg += Math.min(Math.floor(this.gold / wsSk.divisor), wsSk.cap);
+        }
+
+        // pierce: 直線穿透，沿「塔→主目標」方向，每穿一體傷害遞減
         const twDmgElem = tw.dmgType || tw.elem;
         const pierceSk = getSkill(tw, 'pierce');
         if (pierceSk) {
-          const pUp = pierceSk.dmgUp;
-          targets.forEach((e, i) => this.doDmg(e, Math.floor(effDmg * (1 + i * pUp)), twDmgElem, tw));
-          this.addFx(tw.x, tw.y, 2, (tw.elem ? ELEM[tw.elem].color : (tw.basicType === 'cannon' ? '#8888aa' : '#c8a86c')) + '44', 0.2);
+          const pDown = pierceSk.dmgUp;
+          const PIERCE_WIDTH = 0.6;
+          const MIN_RATIO    = 0.3;
           const tp = this.ePos(target);
+          const dx = tp.x - tw.x;
+          const dy = tp.y - tw.y;
+          const len = Math.hypot(dx, dy) || 1;
+          const ux = dx / len;
+          const uy = dy / len;
+          const lineTargets = targets.filter(e => {
+            const ep = this.ePos(e);
+            const ex = ep.x - tw.x;
+            const ey = ep.y - tw.y;
+            const t  = ex * ux + ey * uy;
+            const px = ex - t * ux;
+            const py = ey - t * uy;
+            return t > 0 && Math.hypot(px, py) <= PIERCE_WIDTH;
+          }).sort((a, b) => {
+            const ap = this.ePos(a), bp = this.ePos(b);
+            const ta = (ap.x - tw.x) * ux + (ap.y - tw.y) * uy;
+            const tb = (bp.x - tw.x) * ux + (bp.y - tw.y) * uy;
+            return ta - tb;
+          });
+          lineTargets.forEach((e, i) => {
+            const ratio = Math.max(MIN_RATIO, 1 - i * pDown);
+            this.doDmg(e, Math.floor(effDmg * ratio), twDmgElem, e === target ? tw : null);
+          });
+          this.addFx(tw.x, tw.y, 2, (tw.elem ? ELEM[tw.elem].color : (tw.basicType === 'cannon' ? '#8888aa' : '#c8a86c')) + '44', 0.2);
           this.projectiles.push({x:tw.x, y:tw.y, tx:tp.x, ty:tp.y, color:(tw.elem ? ELEM[tw.elem].color : (tw.basicType === 'cannon' ? '#8888aa' : '#c8a86c')), t:0.15});
           continue;
         }
@@ -2848,12 +2938,13 @@ class Game {
 
         for (let s = 0; s < shots; s++) {
           const shotTarget = s === 0 ? target : (targets[s] || target);
+          const shotTower = s === 0 ? tw : null;
           if (tw.aoe > 0) {
             const p = this.ePos(shotTarget);
-            this.getEnemiesNear(p.x, p.y, tw.aoe).forEach(e => this.doDmg(e, effDmg, twDmgElem, tw));
+            this.getEnemiesNear(p.x, p.y, tw.aoe).forEach(e => this.doDmg(e, effDmg, twDmgElem, shotTower));
             this.addFx(p.x, p.y, tw.aoe * 0.5, (tw.elem ? ELEM[tw.elem].color : (tw.basicType === 'cannon' ? '#8888aa' : '#c8a86c')) + '44', 0.2);
           } else {
-            this.doDmg(shotTarget, effDmg, twDmgElem, tw);
+            this.doDmg(shotTarget, effDmg, twDmgElem, shotTower);
           }
         }
 
@@ -2873,9 +2964,22 @@ class Game {
           const chainTargets = targets.filter(e => e !== target).slice(0, chainSk.targets);
           chainTargets.forEach((e, i) => {
             const chainDmg = Math.floor(effDmg * Math.pow(chainSk.decay, i + 1));
-            this.doDmg(e, chainDmg, twDmgElem, tw);
+            this.doDmg(e, chainDmg, twDmgElem, null);
             const cp = this.ePos(e);
             this.addFx(cp.x, cp.y, 0.3, twColor + '88', 0.15);
+          });
+        }
+
+        // multiArrow: 每次攻擊同時射多支箭至不同目標，各 ×ratio 傷害，副目標不觸發 proc
+        const multiArrowSk = getSkill(tw, 'multiArrow');
+        if (multiArrowSk) {
+          const arrowTargets = targets
+            .filter(e => e !== target)
+            .slice(0, multiArrowSk.shots - 1);
+          arrowTargets.forEach(e => {
+            this.doDmg(e, Math.floor(effDmg * multiArrowSk.ratio), twDmgElem, null);
+            const ep = this.ePos(e);
+            this.projectiles.push({x:tw.x, y:tw.y, tx:ep.x, ty:ep.y, color:twColor, t:0.12});
           });
         }
 
@@ -2912,6 +3016,57 @@ class Game {
       }
     }
     this.zones = this.zones.filter(z => z.t < z.dur);
+
+    // Field 脈衝型（field_stun / field_dmg）及 interval 型（field_burn）
+    for (const tw of this.towers) {
+      const fStun = getSkill(tw, 'field_stun');
+      const fDmg  = getSkill(tw, 'field_dmg');
+      const fBurn = getSkill(tw, 'field_burn');
+      if (!fStun && !fDmg && !fBurn) continue;
+
+      if (fStun) {
+        if (tw._fieldStunCd === undefined) tw._fieldStunCd = 0;
+        tw._fieldStunCd -= dt;
+        if (tw._fieldStunCd <= 0) {
+          tw._fieldStunCd = fStun.cd;
+          this.getEnemiesNear(tw.x, tw.y, fStun.radius).forEach(e => {
+            const ccMult = hasSkill(e, 'tenacity') ? (1 - getSkill(e, 'tenacity').ccReduce) : 1;
+            e.stunTimer = Math.max(e.stunTimer || 0, fStun.dur * ccMult);
+          });
+          this.effects.push({ x: tw.x, y: tw.y, r: fStun.radius, type: 'ring', color: '#ffdc32', dur: 0.4, t: 0 });
+        }
+      }
+
+      if (fDmg) {
+        if (tw._fieldDmgCd === undefined) tw._fieldDmgCd = 0;
+        tw._fieldDmgCd -= dt;
+        if (tw._fieldDmgCd <= 0) {
+          tw._fieldDmgCd = fDmg.cd;
+          const dmgAmt = (tw.damage || 10) * fDmg.flat;
+          this.getEnemiesNear(tw.x, tw.y, fDmg.radius).forEach(e => {
+            const armor = e.armor || 0;
+            const actualDmg = Math.max(1, dmgAmt * (1 - armor));
+            e.hp -= actualDmg;
+            this.addFx(e.x, e.y, 0.2, '#ff6432', 0.2);
+          });
+          this.effects.push({ x: tw.x, y: tw.y, r: fDmg.radius, type: 'ring', color: '#ff6432', dur: 0.3, t: 0 });
+        }
+      }
+
+      if (fBurn) {
+        if (tw._fieldBurnCd === undefined) tw._fieldBurnCd = 0;
+        tw._fieldBurnCd -= dt;
+        if (tw._fieldBurnCd <= 0) {
+          tw._fieldBurnCd = fBurn.interval;
+          const burnDps = (tw.damage || 10) * tw.atkSpd * fBurn.dot;
+          this.getEnemiesNear(tw.x, tw.y, fBurn.radius).forEach(e => {
+            e.burnDmg = burnDps;
+            e.burnTimer = fBurn.dur;
+          });
+          this.effects.push({ x: tw.x, y: tw.y, r: fBurn.radius, type: 'ring', color: '#ff5000', dur: 0.3, t: 0 });
+        }
+      }
+    }
 
     // Effects & projectiles
     for (const f of this.effects) f.t += dt;
@@ -3051,6 +3206,18 @@ class Game {
       // Wave clear → 收取 income（叫兵的投資在這裡回收）
       this.gold += this.income;
       this.addBattleLog('player', `📈 Wave ${this.wave} 結算：收入 +${this.income}g（總金:${Math.floor(this.gold)}）`);
+
+      // interest：利息結算（income 已入帳的金幣為基準）
+      const interestTower = this.towers.find(tw => hasSkill(tw, 'interest'));
+      if (interestTower) {
+        const iSk = getSkill(interestTower, 'interest');
+        const interestBonus = Math.min(Math.floor(this.gold * iSk.rate), iSk.cap);
+        if (interestBonus > 0) {
+          this.gold += interestBonus;
+          this.addBattleLog('player', `💰 利息 +${interestBonus}g（持有 ${Math.floor(this.gold - interestBonus)}g × ${(iSk.rate*100).toFixed(0)}%，上限 ${iSk.cap}g）`);
+        }
+      }
+
       if (this.mode === 'pve') {
         this.ai.gold += this.ai.income;
         this.addBattleLog('ai', `🤖 AI 收入 +${this.ai.income}g（總金:${Math.floor(this.ai.gold)}）`);
@@ -3106,15 +3273,25 @@ class Game {
     for (const f of this.effects) {
       const progress = f.t / f.dur;
       const a = Math.max(0, 1 - progress);
-      const radius = f.r * cs * (1 - progress * 0.5);
-      if (radius <= 0) continue;
-      ctx.beginPath();
-      ctx.arc(this.offsetX+f.x*cs+cs/2, this.offsetY+f.y*cs+cs/2, radius, 0, Math.PI*2);
-      ctx.strokeStyle = f.color + Math.floor(a*180).toString(16).padStart(2,'0');
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.fillStyle = f.color + Math.floor(a*30).toString(16).padStart(2,'0');
-      ctx.fill();
+      if (f.type === 'ring') {
+        // 向外擴展的圓環（pulse 視覺）
+        const ringR = f.r * cs * (0.7 + 0.3 * progress);
+        ctx.beginPath();
+        ctx.arc(this.offsetX+f.x*cs+cs/2, this.offsetY+f.y*cs+cs/2, ringR, 0, Math.PI*2);
+        ctx.strokeStyle = f.color + Math.floor(a * 200).toString(16).padStart(2,'0');
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      } else {
+        const radius = f.r * cs * (1 - progress * 0.5);
+        if (radius <= 0) continue;
+        ctx.beginPath();
+        ctx.arc(this.offsetX+f.x*cs+cs/2, this.offsetY+f.y*cs+cs/2, radius, 0, Math.PI*2);
+        ctx.strokeStyle = f.color + Math.floor(a*180).toString(16).padStart(2,'0');
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = f.color + Math.floor(a*30).toString(16).padStart(2,'0');
+        ctx.fill();
+      }
     }
 
     // Towers

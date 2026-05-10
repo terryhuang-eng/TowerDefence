@@ -869,7 +869,8 @@ function buildTowerTab() {
       `ratio=${SKILL_DEFS.detonate.defaults.ratio}`,
       `目標 burnStacks 累積到 <b>3</b> 時，由擁有此技能的塔命中即觸發：造成 <b>ratio × baseDmg 真傷</b>（無視護甲/易傷），觸發後 burnStacks 歸零。<br>
        burnStacks 是<b>全域計數</b>，所有 burn 塔共用（A塔疊2層，B塔疊第3層可引爆）。<br>
-       灼燒熄滅（burnTimer 歸零）時 burnStacks 同步清零 → 需持續輸出才能維持引爆節奏。`
+       灼燒熄滅（burnTimer 歸零）時 burnStacks 同步清零 → 需持續輸出才能維持引爆節奏。<br>
+       <b>純火塔 LV6 才解鎖引爆，LV5 只有灼燒+引燃。</b>`
     ) +
     srCard('⛓️', '連鎖 chain',
       `targets=${SKILL_DEFS.chain.defaults.targets} decay=${SKILL_DEFS.chain.defaults.decay}`,
@@ -884,9 +885,10 @@ function buildTowerTab() {
       `pct=${SKILL_DEFS.hpPct.defaults.pct} every=${SKILL_DEFS.hpPct.defaults.every} cd=${SKILL_DEFS.hpPct.defaults.cd}s`,
       `每第 every 次攻擊附加 <b>floor(maxHP × pct) 真傷</b>。同一目標有 cd 秒冷卻（冷卻中跳過）。`
     ) +
-    srCard('🥶', '凍傷 frostbite',
+    srCard('🥶', '凍傷 frostbite <span style="background:#555;color:#aaa;font-size:10px;padding:1px 5px;border-radius:3px;text-decoration:line-through;">⚠️ 廢棄</span>',
       `dmgPct=${SKILL_DEFS.frostbite.defaults.dmgPct} dur=${SKILL_DEFS.frostbite.defaults.dur}s`,
-      `命中後施加凍傷：每秒造成目標 <b>dmgPct × maxHP 水系傷害</b>（受元素三角影響），持續 dur 秒。<br>
+      `<b style="color:#f93;">⚠️ 此技能已廢棄，不再分配給純屬塔</b>（功能與 %HP傷害 高度重疊）。<br>
+       命中後施加凍傷：每秒造成目標 <b>dmgPct × maxHP 水系傷害</b>（受元素三角影響），持續 dur 秒。<br>
        多次命中取最大值（不疊加、不延長）。`
     ) +
     srCard('💚', '生命汲取 lifedrain',
@@ -937,7 +939,9 @@ function buildTowerTab() {
   out += srSection('✨ 增益', '#a29bfe',
     srCard('⚡', '越攻越快 ramp',
       `perHit=${SKILL_DEFS.ramp.defaults.perHit} cap=${SKILL_DEFS.ramp.defaults.cap}`,
-      `連續攻擊<b>同一</b>目標每次 +perHit 攻速加成（累積），上限 +cap。切換目標時歸零。`
+      `連續攻擊<b>同一</b>目標每次 +perHit 攻速加成（累積），上限 +cap。<br>
+       切換目標時扣 switchLoss 層（<b>不歸零</b>），維持動量感。<br>
+       快速清群時 ramp 幾乎不損失；停止攻擊或 Boss 戰後才全速建立。`
     ) +
     srCard('🔴', '傷害光環 aura_dmg',
       `radius=${SKILL_DEFS.aura_dmg.defaults.radius} flat=${SKILL_DEFS.aura_dmg.defaults.flat} pct=${SKILL_DEFS.aura_dmg.defaults.pct}`,
@@ -983,6 +987,17 @@ function buildTowerTab() {
     srCard('⭐', '永久強化 permaBuff',
       `atkPerKill=${SKILL_DEFS.permaBuff.defaults.atkPerKill}`,
       `每次擊殺後此塔永久 +atkPerKill 攻擊力（額外加值持續累積）。`
+    ) +
+    srCard('💰', '財富積累 wealthScale',
+      `divisor=${SKILL_DEFS.wealthScale.defaults.divisor} cap=${SKILL_DEFS.wealthScale.defaults.cap}`,
+      `當前持有金幣轉化傷害：每持有 <b>divisor</b> g = +1 傷害，上限 +<b>cap</b>。<br>
+       花錢升塔後傷害<b>即時下降</b>，金幣回收後恢復。純無 LV5 獨有。`
+    ) +
+    srCard('📈', '利息 interest',
+      `rate=${SKILL_DEFS.interest.defaults.rate} cap=${SKILL_DEFS.interest.defaults.cap}`,
+      `每波戰鬥結算時依持有金幣直接加金：bonus = min(floor(持有金幣 × <b>rate</b>), <b>cap</b>)。<br>
+       基準為 income 入帳後、pre_wave 開始前的金幣快照。<br>
+       純無 LV6 獨有。場上有純無塔則觸發，多塔不疊加。`
     )
   );
 

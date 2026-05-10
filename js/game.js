@@ -597,7 +597,7 @@ class Game {
 
     // 元素持有顯示
     const elemDiv = document.getElementById('unlocked-elems');
-    const elemsHtml = ELEM_KEYS.map(e => {
+    const elemsHtml = getActiveKeys().map(e => {
       const count = this.elemPicks[e];
       if (count === 0) return `<span class="elem-tag" style="background:#33333322;border-color:#555;color:#555">${ELEM[e].icon} ${ELEM[e].name} ×0</span>`;
       return `<span class="elem-tag" style="background:${ELEM[e].color}22;border-color:${ELEM[e].color};color:${ELEM[e].color}">${ELEM[e].icon} ${ELEM[e].name} ×${count}</span>`;
@@ -1854,10 +1854,12 @@ class Game {
   mkEnemy(def, speedMult, hpMult = 1) {
     let resist = def.resist;
     if (resist === 'random') {
-      const re = ELEM_KEYS[Math.floor(Math.random() * ELEM_KEYS.length)];
+      const ak = getActiveKeys();
+      const re = ak[Math.floor(Math.random() * ak.length)];
       resist = { [re]: 0.5 };
     } else if (resist === 'random_dual') {
-      const shuffled = [...ELEM_KEYS].sort(() => Math.random() - 0.5);
+      const ak = getActiveKeys();
+      const shuffled = [...ak].sort(() => Math.random() - 0.5);
       resist = { [shuffled[0]]: 0.4, [shuffled[1]]: 0.4 };
     }
     const hp = Math.round(def.hp * hpMult);
@@ -2910,7 +2912,7 @@ class Game {
         const twDmgElem = tw.dmgType || tw.elem;
         const pierceSk = getSkill(tw, 'pierce');
         if (pierceSk) {
-          const pDown = pierceSk.dmgUp;
+          const pDown = pierceSk.dmgDown;
           const PIERCE_WIDTH = 0.6;
           const MIN_RATIO    = 0.3;
           const tp = this.ePos(target);
@@ -2933,7 +2935,7 @@ class Game {
             const tb = (bp.x - tw.x) * ux + (bp.y - tw.y) * uy;
             return ta - tb;
           });
-          lineTargets.forEach((e, i) => {
+          lineTargets.slice(0, pierceSk.count ?? 3).forEach((e, i) => {
             const ratio = Math.max(MIN_RATIO, 1 - i * pDown);
             this.doDmg(e, Math.floor(effDmg * ratio), twDmgElem, e === target ? tw : null);
           });

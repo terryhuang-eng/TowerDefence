@@ -109,7 +109,7 @@ const editData = {
   pureTowers: JSON.parse(JSON.stringify(PURE_TOWERS)),
   basicTowers: JSON.parse(JSON.stringify(BASIC_TOWERS)),
   towers: JSON.parse(JSON.stringify(TOWERS)),
-  config: JSON.parse(JSON.stringify(CONFIG)),
+  config: { ...JSON.parse(JSON.stringify(CONFIG)), activeElems: [...ELEM_KEYS] },
   globalCaps: JSON.parse(JSON.stringify(GLOBAL_CAPS)),
 };
 
@@ -409,7 +409,7 @@ function renderList() {
     hdr1b.className = 'chapter-divider';
     hdr1b.textContent = '元素塔 Lv1-2';
     panel.appendChild(hdr1b);
-    for (const elem of ELEM_KEYS) {
+    for (const elem of getActiveElems()) {
       const t = editData.towers[elem];
       if (!t) continue;
       t.levels.forEach((lv, li) => {
@@ -429,7 +429,7 @@ function renderList() {
     hdr2.className = 'chapter-divider';
     hdr2.textContent = '元素基底 Lv3';
     panel.appendChild(hdr2);
-    for (const elem of ELEM_KEYS) {
+    for (const elem of getActiveElems()) {
       for (const base of BASIC_KEYS) {
         const eb = editData.elemBase[elem][base];
         const item = document.createElement('div');
@@ -443,12 +443,17 @@ function renderList() {
       }
     }
     // Infusions (Lv4 only)
-    for (const baseElem of ELEM_KEYS) {
+    for (const baseElem of getActiveElems()) {
+      const visibleInjs = getActiveElems().filter(injElem => {
+        const inf = editData.infusions[baseElem]?.[injElem];
+        return inf && inf.lv4;
+      });
+      if (visibleInjs.length === 0) continue;
       const hdr = document.createElement('div');
       hdr.className = 'chapter-divider';
       hdr.textContent = `${ELEM[baseElem].icon} ${ELEM[baseElem].name}底注入 Lv4`;
       panel.appendChild(hdr);
-      for (const injElem of ELEM_KEYS) {
+      for (const injElem of visibleInjs) {
         const inf = editData.infusions[baseElem]?.[injElem];
         if (!inf || !inf.lv4) continue;
         const lv = inf.lv4;
@@ -469,6 +474,9 @@ function renderList() {
     panel.appendChild(tripleHdr);
     for (const [key, triple] of Object.entries(editData.tripleTowers)) {
       if (!triple.lv5) continue;
+      const keyElems = key.split('_');
+      const active = getActiveElems();
+      if (!keyElems.every(e => active.includes(e))) continue;
       const lv = triple.lv5;
       const item = document.createElement('div');
       item.className = 'list-item' + (selectedIdx === tIdx ? ' selected' : '');
@@ -486,6 +494,7 @@ function renderList() {
     panel.appendChild(pure5Hdr);
     for (const [elem, pure] of Object.entries(editData.pureTowers)) {
       if (!pure.lv5) continue;
+      if (!getActiveElems().includes(elem)) continue;
       const lv = pure.lv5;
       const item = document.createElement('div');
       item.className = 'list-item' + (selectedIdx === tIdx ? ' selected' : '');
@@ -504,6 +513,7 @@ function renderList() {
     panel.appendChild(pureHdr);
     for (const [elem, pure] of Object.entries(editData.pureTowers)) {
       if (!pure.lv6) continue;
+      if (!getActiveElems().includes(elem)) continue;
       const lv = pure.lv6;
       const item = document.createElement('div');
       item.className = 'list-item' + (selectedIdx === tIdx ? ' selected' : '');
@@ -539,7 +549,7 @@ function getTowerByFlatIdx(idx) {
       i++;
     }
   }
-  for (const elem of ELEM_KEYS) {
+  for (const elem of getActiveElems()) {
     const t = editData.towers[elem];
     if (!t) continue;
     for (const lv of t.levels) {
@@ -548,14 +558,14 @@ function getTowerByFlatIdx(idx) {
       i++;
     }
   }
-  for (const elem of ELEM_KEYS) {
+  for (const elem of getActiveElems()) {
     for (const base of BASIC_KEYS) {
       if (i === idx) return editData.elemBase[elem][base];
       i++;
     }
   }
-  for (const baseElem of ELEM_KEYS) {
-    for (const injElem of ELEM_KEYS) {
+  for (const baseElem of getActiveElems()) {
+    for (const injElem of getActiveElems()) {
       const inf = editData.infusions[baseElem]?.[injElem];
       if (!inf || !inf.lv4) continue;
       if (i === idx) { const o = inf.lv4; if (o.dmgType === undefined) o.dmgType = baseElem; return o; }
@@ -563,16 +573,20 @@ function getTowerByFlatIdx(idx) {
     }
   }
   for (const [key, triple] of Object.entries(editData.tripleTowers)) {
+    const keyElems = key.split('_');
+    if (!keyElems.every(e => getActiveElems().includes(e))) continue;
     if (!triple.lv5) continue;
     if (i === idx) { const o = triple.lv5; if (o.dmgType === undefined) o.dmgType = key.split('_')[0]; return o; }
     i++;
   }
   for (const [elem, pure] of Object.entries(editData.pureTowers)) {
+    if (!getActiveElems().includes(elem)) continue;
     if (!pure.lv5) continue;
     if (i === idx) { const o = pure.lv5; if (o.dmgType === undefined) o.dmgType = elem; return o; }
     i++;
   }
   for (const [elem, pure] of Object.entries(editData.pureTowers)) {
+    if (!getActiveElems().includes(elem)) continue;
     if (!pure.lv6) continue;
     if (i === idx) { const o = pure.lv6; if (o.dmgType === undefined) o.dmgType = elem; return o; }
     i++;
@@ -1436,19 +1450,32 @@ function renderConfigPanel() {
   }
   html += '</table></div>';
 
+  // 元素開關
+  html += '<div class="section"><h3>🧩 啟用元素</h3>';
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">';
+  for (const ek of ELEM_KEYS) {
+    const isActive = getActiveElems().includes(ek);
+    const el = ELEM[ek];
+    html += `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:4px 8px;border:1px solid ${isActive ? '#4ecdc4' : '#444'};border-radius:4px;background:${isActive ? '#1a2a3a' : '#111'};">
+    <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleElem('${ek}', this.checked)" style="width:14px;height:14px;">
+    ${el.icon} ${el.name}
+  </label>`;
+  }
+  html += '</div></div>';
+
   // 元素克制
   html += '<div class="section"><h3>🔥 元素克制 (elemAdv)</h3>';
   html += '<table style="border-collapse:collapse;font-size:11px;">';
   html += '<tr><th style="padding:4px;border:1px solid #333;">攻↓ 防→</th>';
-  for (const def of ELEM_KEYS) {
+  for (const def of getActiveElems()) {
     const e = ELEM[def];
     html += `<th style="padding:4px;border:1px solid #333;">${e.icon}${e.name}</th>`;
   }
   html += '</tr>';
-  for (const atk of ELEM_KEYS) {
+  for (const atk of getActiveElems()) {
     const ea = ELEM[atk];
     html += `<tr><th style="padding:4px;border:1px solid #333;">${ea.icon}${ea.name}</th>`;
-    for (const def of ELEM_KEYS) {
+    for (const def of getActiveElems()) {
       if (atk === def) {
         html += '<td style="padding:2px;border:1px solid #333;text-align:center;color:#666;">—</td>';
       } else {
@@ -1462,6 +1489,26 @@ function renderConfigPanel() {
   html += '</table></div>';
 
   editPanel.innerHTML = html;
+}
+
+function getActiveElems() {
+  return editData.config.activeElems ?? [...ELEM_KEYS];
+}
+
+function toggleElem(elemKey, enabled) {
+  const cur = editData.config.activeElems;
+  if (enabled) {
+    if (!cur.includes(elemKey)) cur.push(elemKey);
+    editData.config.activeElems = ELEM_KEYS.filter(e => cur.includes(e));
+  } else {
+    editData.config.activeElems = cur.filter(e => e !== elemKey);
+  }
+  renderConfigPanel();
+  if (currentTab === 'towers') {
+    selectedIdx = -1;
+    renderList();
+    renderEditor();
+  }
 }
 
 function setElemAdv(atk, def, val) {
@@ -1589,6 +1636,9 @@ function exportConfig(mode) {
     lines.push(`    ${dk}: { ${parts.join(', ')} },`);
   }
   lines.push('  },');
+  lines.push('');
+  const activeArr = editData.config.activeElems ?? [...ELEM_KEYS];
+  lines.push('  activeElems: ' + JSON.stringify(activeArr) + ',');
   lines.push('');
   lines.push('  // 元素相剋');
   lines.push('  elemAdv: {');

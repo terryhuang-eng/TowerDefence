@@ -35,4 +35,8 @@ const CONFIG = {
   essenceLv6Threshold: 100,           // 單元素精華門檻（解鎖 Lv6 升級）
   essenceMilestones: [200, 350, 500], // 總精華里程碑（送兵 HP 加成）
   essenceMilestoneBonus: 0.15,        // 每段里程碑送兵 HP 加成
+
+  // 啟用元素（由 skill-editor 匯出，預設全開）
+  // 若未定義則遊戲自動 fallback 至 ELEM_KEYS（全部元素）
+  activeElems: null,   // null = 全開（等同 ELEM_KEYS）
 };

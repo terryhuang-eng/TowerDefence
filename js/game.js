@@ -1,6 +1,17 @@
 // ============================================================
 // GAME
 // ============================================================
+
+/**
+ * 回傳目前啟用的元素 key 陣列。
+ * CONFIG.activeElems 為 null/undefined 時 fallback 全部元素。
+ */
+function getActiveKeys() {
+  return (CONFIG.activeElems && CONFIG.activeElems.length > 0)
+    ? CONFIG.activeElems
+    : ELEM_KEYS;
+}
+
 class Game {
   constructor(difficulty, mode, pvpNet) {
     // 連線模式
@@ -1326,7 +1337,7 @@ class Game {
     overlay.style.display = 'flex';
     cardsDiv.innerHTML = '';
 
-    for (const ek of ELEM_KEYS) {
+    for (const ek of getActiveKeys()) {
       const card = document.createElement('div');
       card.className = 'reward-card';
       const curPicks = this.elemPicks[ek];
@@ -1410,7 +1421,7 @@ class Game {
         }
       }
       // 也找出沒有抗性的元素（打起來不會被減傷）
-      const noResist = ELEM_KEYS.filter(e => !resistElems.includes(e));
+      const noResist = getActiveKeys().filter(e => !resistElems.includes(e));
       let parts = [];
       for (const e of weakSet) {
         const el = ELEM[e];
@@ -1683,7 +1694,8 @@ class Game {
 
     // AI 在 W3/W6/W9/W12 後獲取元素（共 4 次）
     if (this.wave >= 3 && !this.aiBaseElem) {
-      this.aiBaseElem = ELEM_KEYS[Math.floor(Math.random() * ELEM_KEYS.length)];
+      const _ak = getActiveKeys();
+      this.aiBaseElem = _ak[Math.floor(Math.random() * _ak.length)];
       this.aiElemPicks[this.aiBaseElem] = 1;
       this.aiInfuseElem = null; // Lv3 = 單元素，尚未注入
     }
@@ -1692,19 +1704,19 @@ class Game {
       if (Math.random() < 0.5) {
         this.aiElemPicks[this.aiBaseElem]++;
       } else {
-        const others = ELEM_KEYS.filter(e => e !== this.aiBaseElem);
+        const others = getActiveKeys().filter(e => e !== this.aiBaseElem);
         const pick = others[Math.floor(Math.random() * others.length)];
         this.aiElemPicks[pick] = (this.aiElemPicks[pick] || 0) + 1;
       }
       // 2 picks → AI 可注入（選同元素或不同）
       if (!this.aiInfuseElem) {
-        const avail = ELEM_KEYS.filter(e => e !== this.aiBaseElem ? (this.aiElemPicks[e] || 0) >= 1 : (this.aiElemPicks[e] || 0) >= 2);
+        const avail = getActiveKeys().filter(e => e !== this.aiBaseElem ? (this.aiElemPicks[e] || 0) >= 1 : (this.aiElemPicks[e] || 0) >= 2);
         this.aiInfuseElem = avail.length > 0 ? avail[Math.floor(Math.random() * avail.length)] : this.aiBaseElem;
       }
     }
     if (this.wave >= 9 && this.getTotalAiPicks() < 3) {
       // 第 3 元素：隨機選一個新元素（優先不同，讓三屬塔可用）
-      const others3 = ELEM_KEYS.filter(e => e !== this.aiBaseElem && e !== this.aiInfuseElem);
+      const others3 = getActiveKeys().filter(e => e !== this.aiBaseElem && e !== this.aiInfuseElem);
       const pick3 = others3.length > 0 ? others3[Math.floor(Math.random() * others3.length)] : this.aiBaseElem;
       this.aiElemPicks[pick3] = (this.aiElemPicks[pick3] || 0) + 1;
       // 選定第三元素用於 Lv5

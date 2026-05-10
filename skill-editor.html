@@ -796,9 +796,61 @@ function smUpdateParam(flatIdx, skillType, param, value) {
   if (sk) sk.params[param] = parseFloat(value) || 0;
 }
 
-// placeholder — renderSmMatrixView 於 step3 實作
 function renderSmMatrixView() {
-  return '<div style="color:#666;padding:24px;text-align:center">矩陣視角將於 step3 實作</div>';
+  const allTowers = buildAllTowers();
+
+  // 收集所有在任一塔上啟用的 tower 技能（依 group 排序）
+  const usedSkillKeys = [];
+  const seenKeys = new Set();
+  const groupOrder = ['damage','control','debuff','buff','special'];
+  for (const group of groupOrder) {
+    for (const [key, def] of Object.entries(SKILL_DEFS)) {
+      if (def.category !== 'tower' || def.group !== group) continue;
+      if (seenKeys.has(key)) continue;
+      const isUsed = allTowers.some(t =>
+        (t.unit.skills || []).some(s => s.type === key && s.enabled !== false)
+      );
+      if (isUsed) { usedSkillKeys.push(key); seenKeys.add(key); }
+    }
+  }
+
+  if (usedSkillKeys.length === 0) {
+    return '<div style="color:#666;padding:24px;text-align:center">目前無任何塔配置技能</div>';
+  }
+
+  let html = '<div class="sm-matrix-wrap"><table class="sm-matrix"><thead><tr>';
+  html += '<th style="min-width:130px">塔</th>';
+  for (const key of usedSkillKeys) {
+    const def = SKILL_DEFS[key];
+    const hlStyle = (smSelectedSkill === key) ? 'background:#1a3a5e;color:#ffd93d;' : '';
+    html += `<th class="sk-col" style="${hlStyle}" onclick="smView='skill';smSelectedSkill='${key}';renderSkillMatrixPanel()" title="${def.name}：${def.desc}">${def.name}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  let lastGroup = '';
+  for (const t of allTowers) {
+    if (lastGroup !== t.groupLabel) {
+      html += `<tr class="sm-group-row"><th colspan="${usedSkillKeys.length + 1}">${t.groupLabel}</th></tr>`;
+      lastGroup = t.groupLabel;
+    }
+    html += `<tr>`;
+    html += `<th><span style="cursor:pointer;color:#4ecdc4" onclick="jumpToTowerTab(${t.flatIdx})">${t.icon} ${t.label}</span> <span style="color:#555;font-size:10px">[${t.lv}]</span></th>`;
+    for (const key of usedSkillKeys) {
+      const sk = (t.unit.skills || []).find(s => s.type === key && s.enabled !== false);
+      if (sk) {
+        const paramStr = Object.entries({ ...SKILL_DEFS[key].defaults, ...sk.params })
+          .map(([k,v]) => `${k}:${v}`).join(' ');
+        const hlBg = (smSelectedSkill === key) ? 'background:#1a4a2a' : '';
+        html += `<td class="has-skill" style="${hlBg}" title="${paramStr}">✓</td>`;
+      } else {
+        const hlBg = (smSelectedSkill === key) ? 'background:#1a1a3a' : '';
+        html += `<td class="no-skill" style="${hlBg}">—</td>`;
+      }
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  return html;
 }
 
 // ============================================================

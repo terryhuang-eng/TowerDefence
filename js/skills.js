@@ -9,9 +9,9 @@ const GLOBAL_CAPS = {
   chillMaxStacks: 130,
   chillDecayRate: 6,
   atkSpdBonus: 2,  // 攻速加成上限 +100%
-  shredPerStack: 0.005,  // 每層 -2% 護甲穿透
-  shredMaxStacks: 130,  // 上限 37 層 = 74%
-  shredDecayRate: 6,  // 每秒 -1.5 層
+  shredPerStack: 0.006,  // 每層 -2% 護甲穿透
+  shredMaxStacks: 100,  // 上限 37 層 = 74%
+  shredDecayRate: 4,  // 每秒 -1.5 層
   vulnPerStack: 0.02,  // 每層 +2% 易傷
   vulnMaxStacks: 37,  // 上限 37 層
   vulnDecayRate: 1.5,  // 每秒 -1.5 層
@@ -41,7 +41,7 @@ const SKILL_DEFS = {
   knockback   : { category: 'tower', group: 'control', name: '擊退', defaults: {dist:0.5,cd:5}, desc: '擊退 dist 格', scoreBase: 15, scorePrimary: null, scoreRef: null },
 
   // ── 塔：弱化類 ──
-  shred       : { category: 'tower', group: 'debuff', name: '碎甲', defaults: {stacksPerHit:2}, desc: '每次攻擊疊 stacksPerHit 層，全域每層 -shredPerStack% 護甲（上限 shredMaxStacks 層，衰減 shredDecayRate 層/秒）', scoreBase: 10, scorePrimary: 'stacksPerHit', scoreRef: 1 },
+  shred       : { category: 'tower', group: 'debuff', name: '碎甲', defaults: {stacksPerHit:2}, desc: '每次攻擊疊 stacksPerHit 層，全域每層 -shredPerStack% 護甲（上限 shredMaxStacks 層，衰減 shredDecayRate 層/秒）', scoreBase: 6, scorePrimary: 'stacksPerHit', scoreRef: 1 },
   vulnerability: { category: 'tower', group: 'debuff', name: '易傷', defaults: {stacksPerHit:2}, desc: '每次攻擊疊 stacksPerHit 層，全域每層 +vulnPerStack% 易傷（上限 vulnMaxStacks 層）', scoreBase: 25, scorePrimary: 'stacksPerHit', scoreRef: 1 },
 
   // ── 塔：增益類 ──

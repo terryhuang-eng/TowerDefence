@@ -2795,7 +2795,6 @@ class Game {
       const ar = getSkill(src, 'aura_range');
       if (!ad && !aa && !ar) continue;
       for (const tw of this.towers) {
-        if (tw === src) continue;
         const dist = Math.hypot(tw.x - src.x, tw.y - src.y);
         if (ad && dist <= ad.radius) { tw._auraDmgFlat += ad.flat; tw._auraDmgPct += ad.pct; }
         if (aa && dist <= aa.radius) tw._auraAtkSpd = Math.min(GLOBAL_CAPS.atkSpdBonus, tw._auraAtkSpd + aa.bonus);

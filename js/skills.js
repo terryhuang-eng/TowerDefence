@@ -30,7 +30,7 @@ const SKILL_DEFS = {
   detonate    : { category: 'tower', group: 'damage', name: '引爆', defaults: {ratio:0.8}, desc: '消耗灼燒，ratio×ATK 真傷（無視護甲）', scoreBase: 20, scorePrimary: 'ratio', scoreRef: 0.8 },
   chain       : { category: 'tower', group: 'damage', name: '連鎖', defaults: {targets:2,decay:0.7}, desc: '跳到鄰近 targets 個敵人，每跳 ×decay', scoreBase: 20, scorePrimary: 'targets', scoreRef: 2 },
   execute     : { category: 'tower', group: 'damage', name: '斬殺', defaults: {threshold:0.15,mult:2}, desc: 'HP < threshold 時傷害 ×mult', scoreBase: 20, scorePrimary: null, scoreRef: null },
-  hpPct       : { category: 'tower', group: 'damage', name: '%HP傷害', defaults: {pct:0.03,every:3,cd:0.5}, desc: '每 every 次附加 pct% 最大HP傷害', scoreBase: 40, scorePrimary: 'pct', scoreRef: 0.03 },
+  hpPct       : { category: 'tower', group: 'damage', name: '%HP傷害', defaults: {pct:0.03,every:3,cd:0.5}, desc: '每 every 次附加 pct% 最大HP傷害', scoreBase: 20, scorePrimary: 'pct', scoreRef: 0.03 },
   frostbite   : { category: 'tower', group: 'damage', name: '凍傷', defaults: {dmgPct:0.02,dur:3}, desc: '⚠️ [廢棄] 功能與 hpPct 高度重疊，不再分配給純屬塔。命中施加凍傷，每秒 dmgPct×maxHP 水系傷害，持續 dur 秒。', scoreBase: 30, scorePrimary: 'dmgPct', scoreRef: 0.02 },
   lifedrain   : { category: 'tower', group: 'damage', name: '生命汲取', defaults: {pct:0.15}, desc: '傷害 pct% 回復基地 HP', scoreBase: 10, scorePrimary: 'pct', scoreRef: 0.15 },
 

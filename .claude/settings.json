@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd 'C:/Users/terryhuang/Claude/projects/tower-defense-prototype' && git add -A && git diff --cached --quiet || (git commit -m 'auto: session update' && git push) 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

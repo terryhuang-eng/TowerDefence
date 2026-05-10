@@ -1,0 +1,15 @@
+session: 23
+date: 2026-05-11
+resume_trigger: "繼續技能矩陣"
+project: tower-defense-prototype
+completed:
+  - skill-matrix tab（skill-editor.html 第 5 個 tab）
+    - buildAllTowers() helper
+    - 左 panel：技能清單 + 使用數 badge
+    - 技能視角：選技能 → 塔清單 + params 編輯
+    - 矩陣視角：技能×塔交叉表
+    - jumpToTowerTab / smUpdateParam
+next:
+  - 瀏覽器測試：技能矩陣 tab 各功能
+  - plans/active/elem-vs-class-design（PVP 後決定）
+  - editor-validation step2/step3（若仍需要）

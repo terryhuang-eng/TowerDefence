@@ -2637,11 +2637,12 @@ class Game {
 
       const regenSk = getSkill(e, 'regen');
       if (regenSk) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * regenSk.pct * dt);
-      if (e.burnTimer > 0) { const _bdt = e.burnDmg * dt; e.hp -= _bdt; if (window.SANDBOX?.fireDmg) window.SANDBOX.fireDmg.burn += _bdt; e.burnTimer -= dt; }
+      if (e.burnTimer > 0) { const burnDt = Math.min(dt, e.burnTimer); const _bdt = e.burnDmg * burnDt; e.hp -= _bdt; if (window.SANDBOX?.fireDmg) window.SANDBOX.fireDmg.burn += _bdt; e.burnTimer -= dt; }
       if (e.burnTimer <= 0) e.burnStacks = 0;
       // frostbite DOT（水系，受元素三角影響，獨立於冰冷）
       if (e.frostbiteDur > 0) {
-        let _fbdt = e.frostbiteDmgPct * e.maxHp * dt;
+        const fbDt = Math.min(dt, e.frostbiteDur);
+        let _fbdt = e.frostbiteDmgPct * e.maxHp * fbDt;
         if (e.elem && CONFIG.elemAdv.water && CONFIG.elemAdv.water[e.elem]) _fbdt *= CONFIG.elemAdv.water[e.elem];
         e.hp -= _fbdt;
         if (window.SANDBOX?.waterDmg) window.SANDBOX.waterDmg.frostbite += _fbdt;

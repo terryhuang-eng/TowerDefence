@@ -260,7 +260,8 @@ class MockGame {
 
     // burn DOT
     if (enemy.burnTimer > 0) {
-      enemy.hp -= enemy.burnDmg * dt;
+      const burnDt = Math.min(dt, enemy.burnTimer);
+      enemy.hp -= enemy.burnDmg * burnDt;
       enemy.burnTimer -= dt;
     }
     if (enemy.burnTimer <= 0) enemy.burnStacks = 0;
@@ -994,8 +995,8 @@ test('burn: DOT 部分秒數計算正確', () => {
 test('burn: burnTimer 耗盡時不再扣血', () => {
   const game  = new MockGame();
   const enemy = mkEnemy({hp: 100, burnDmg: 10, burnTimer: 1.0});
-  game.tickEnemy(enemy, 2.0);  // 超過 burnTimer
-  assert(enemy.hp >= 89, `hp=${enemy.hp} should stop burning after timer`);
+  game.tickEnemy(enemy, 2.0);  // 超過 burnTimer：只燒 1.0s → 扣 10 血
+  assertRange(enemy.hp, 89.9, 90.1, 'burn stops at timer=0: hp=90');
   assert(enemy.burnTimer <= 0, 'burnTimer <= 0 after expiry');
 });
 

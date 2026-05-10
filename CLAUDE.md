@@ -160,7 +160,10 @@
 - **執行模式 (EXECUTE Mode)**：觸發關鍵字 `execute XXX/stepN.md`
   - **目標**：精準實作，嚴格依照指定步驟 md 執行。
   - **行動**：僅讀取 `plans/active/XXX/stepN.md` 與其中指定的目標檔案，分析需求並執行該步驟。
-  - **限制**：一次只動一個檔案，步驟完成後提醒使用者執行 `/clear`。
+  - **限制**：一次只動一個檔案。
+  - **⚠️ 強制 — 步驟完成提醒**：
+    - **一般步驟**：完成後提醒「可繼續 `execute XXX/stepN+1.md`，或輸入 `/clear` 清除對話。」
+    - **最後一步**：執行前讀取 `plans/active/XXX/index.md`，確認當前 stepN 為步驟表最後一個 step。執行完畢後輸出：`✅ 所有步驟完成。測試通過後請執行 /saveclear 封存計畫並同步 git。`
   - **⚠️ 強制 — 程式碼定位流程**：Grep 找行號 → Read ±10 行確認 context → Edit。**禁止 Read 整個大型檔案**。
   - **⚠️ 強制 — .claudeignore 更新**：每次 THINK 或 EXECUTE 開始前，必須先更新 `.claudeignore` 的 `# Task Specific` 區塊，只列本步驟需要的檔案。
   - **⚠️ 強制 — 回饋格式**：步驟完成後只輸出「原因」＋「結果」，不輸出程式碼變更細節、diff 或逐行說明。

@@ -52,7 +52,7 @@ const SKILL_DEFS = {
   aura_range  : { category: 'tower', group: 'buff', name: '射程光環', defaults: {radius:2,bonus:0.5}, desc: '範圍內友軍射程 +bonus', scoreBase: 15, scorePrimary: 'bonus', scoreRef: 0.5 },
 
   // ── 塔：特殊類 ──
-  multishot   : { category: 'tower', group: 'special', name: '三連射', defaults: {every:3,shots:3,killBonus:0.5,killDur:3}, desc: '每 every 次射 shots 發+擊殺加速', scoreBase: 40, scorePrimary: null, scoreRef: null },
+  multishot   : { category: 'tower', group: 'special', name: '三連射', defaults: {every:3,shots:3,killBonus:0.5,killDur:3}, desc: '每 every 次射 shots 發+擊殺加速', scoreBase: 25, scorePrimary: null, scoreRef: null },
   pierce      : { category: 'tower', group: 'special', name: '穿透', defaults: {dmgDown:0.15,count:3}, desc: '直線穿透最多 count 體，每穿 −dmgDown 傷害', scoreBase: 15, scorePrimary: 'dmgDown', scoreRef: 0.15 },
   zone_slow   : { category: 'tower', group: 'special', name: '減速領域', defaults: {radius:1.5,chillStacks:40}, desc: '命中後在目標位置留下圓圈（半徑 radius 格，持續 3 秒），圓圈內敵人冰冷層數維持在 chillStacks', scoreBase: 15, scorePrimary: 'chillStacks', scoreRef: 40, scoreFactors: [{"param":"radius","ref":1.5}] },
   zone_shred  : { category: 'tower', group: 'special', name: '碎甲領域', defaults: {radius:1.5,shredStacks:10}, desc: '命中後在目標位置留下圓圈（半徑 radius 格，持續 3 秒），圓圈內敵人碎甲層數維持在 shredStacks', scoreBase: 5, scorePrimary: 'shredStacks', scoreRef: 10, scoreFactors: [{"param":"radius","ref":1.5}] },

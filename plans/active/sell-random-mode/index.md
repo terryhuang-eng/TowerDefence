@@ -21,4 +21,4 @@
 |---|------|------|------|
 | step1 | 賣塔返還率分級（Lv1-3=100%，Lv4-6=80%） | ✅ | js/game.js |
 | step2 | 隨機模式狀態 + showElementScreen UI + 後續自動 pick | ✅ | js/game.js |
-| step3 | buildRulesTab 加入賣塔返還規則 + 隨機模式說明 | ⬜ | js/game.js |
+| step3 | buildRulesTab 加入賣塔返還規則 + 隨機模式說明 | ✅ | js/game.js |

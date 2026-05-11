@@ -2106,7 +2106,8 @@ class Game {
           基礎收入: ${CONFIG.baseIncome}g/波（保底）<br>
           擊殺金（波次怪）: 每隻怪物獨立金額（見波次預覽），Boss 擊殺金額更高<br>
           擊殺金（AI送兵）: ${CONFIG.killGoldAiSend}g（固定）<br>
-          <b style="color:#4ecdc4;">送兵 = 主要 income 成長手段</b>，不送兵後期會缺錢
+          <b style="color:#4ecdc4;">送兵 = 主要 income 成長手段</b>，不送兵後期會缺錢<br>
+          賣塔返還：Lv1/2/3 = <b style="color:#4ecdc4;">100%</b>，Lv4/5/6 = <b style="color:#ffd93d;">80%</b>
         </div>
         <h3 style="color:#ff6b35;margin:12px 0 4px;">🏗️ 升級路徑</h3>
         <div style="font-size:11px;">
@@ -2115,6 +2116,11 @@ class Game {
           1 pick → 純元素路線 only（最高 Lv1）<br>
           2 picks → 可選混合路線（最高 Lv2）<br>
           3 picks 同元素 → 純元素 Lv3（最強）
+        </div>
+        <h3 style="color:#aaa;margin:12px 0 4px;">🎲 隨機模式</h3>
+        <div style="font-size:11px;">
+          W3 元素選擇時可選「隨機模式」，之後每次元素皆自動隨機決定。<br>
+          <b style="color:#4ecdc4;">隨機模式下所有塔賣出 100% 全額返還。</b>
         </div>
         <h3 style="color:#c6c;margin:12px 0 4px;">⚡ 技能一覽</h3>
         <div style="font-size:11px;">

@@ -759,7 +759,8 @@ class Game {
     if (t.level <= 2) lvLabel = `Basic Lv${t.level}`;
     else lvLabel = `元素 Lv${t.level - 2}`;
 
-    const sellValue = Math.floor((t.totalCost || CONFIG.towerCost) * 0.8);
+    const sellRate = (t.level <= 3 || this.randomMode) ? 1.0 : 0.8;
+    const sellValue = Math.floor((t.totalCost || CONFIG.towerCost) * sellRate);
     const curSkills = curLvData.skills || [];
     const skillTag = curSkills.length > 0
       ? ` | <span class="skill-tip" data-skills='${JSON.stringify(curSkills)}' style="color:#ffd93d;cursor:pointer;text-decoration:underline dotted;">${getSkillBrief(curSkills)} ℹ️</span>`
@@ -1094,7 +1095,8 @@ class Game {
   // 精華里程碑檢查（總精華達到門檻時觸發送兵 HP 加成）
 
   sellTower(t) {
-    const sellValue = Math.floor((t.totalCost || CONFIG.towerCost) * 0.8);
+    const sellRate = (t.level <= 3 || this.randomMode) ? 1.0 : 0.8;
+    const sellValue = Math.floor((t.totalCost || CONFIG.towerCost) * sellRate);
     this.gold += sellValue;
     this.grid[t.y][t.x] = 0;
     this.towers = this.towers.filter(tw => tw !== t);

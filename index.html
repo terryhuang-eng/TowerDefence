@@ -367,6 +367,7 @@ canvas { display: block; touch-action: manipulation; }
       <div><button id="ai-hp-btn" style="padding:2px 8px;border:1px solid #555;border-radius:4px;background:#1a1a3e;color:#e94560;cursor:pointer;font-size:12px;">🤖 AI +1 HP</button></div>
       <div><button id="pvp-ready-topbar" style="display:none;padding:4px 14px;border:2px solid #4ecdc4;border-radius:6px;background:#1a3a3e;color:#4ecdc4;cursor:pointer;font-size:13px;font-weight:bold;animation:readyPulse 1.5s infinite;">✓ 準備</button></div>
       <div><button id="info-btn" style="padding:2px 8px;border:1px solid #555;border-radius:4px;background:#1a1a3e;color:#ffd93d;cursor:pointer;font-size:12px;">📖 說明</button></div>
+      <div><button onclick="showSkillRef()" style="padding:2px 8px;border:1px solid #b77aff;border-radius:4px;background:#1a1a3e;color:#b77aff;cursor:pointer;font-size:12px;">🔮 技能</button></div>
       <div><button id="sidebar-toggle">☰ 面板</button></div>
     </div>
     <div id="sidebar-backdrop"></div>
@@ -454,7 +455,6 @@ canvas { display: block; touch-action: manipulation; }
         <div id="pvp-status" style="font-size:12px;color:#aaa;min-height:20px;"></div>
       </div>
       <button class="start-btn" id="start-btn">開始戰鬥</button>
-      <button onclick="showSkillRef()" style="margin-top:6px;padding:6px 18px;border:1px solid #b77aff;border-radius:4px;background:transparent;color:#b77aff;cursor:pointer;font-size:13px;">📖 技能說明</button>
       <div id="autotest-panel" style="margin-top:12px;border-top:1px solid #333;padding-top:8px;display:none;">
         <div style="font-size:10px;color:#888;margin-bottom:4px;">🤖 自動平衡測試</div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">

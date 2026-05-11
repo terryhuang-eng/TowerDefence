@@ -17,6 +17,7 @@ const GLOBAL_CAPS = {
   vulnDecayRate: 1.5,  // 每秒 -1.5 層
   procMinInterval: 0.3,  // proc 最小間隔 0.3 秒
   hpPctCd: 0.2,  // %HP 傷害每目標冷卻 0.5 秒
+  hpPctCap: 120,  // %HP 傷害每次上限（防 Boss 秒殺）
 };
 
 // ============================================================

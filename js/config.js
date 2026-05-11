@@ -32,4 +32,5 @@ const CONFIG = {
   gridCols: 20,
   gridRows: 10,
   totalWaves: 20,
+  maxLv6Towers: 1,   // 全場最多允許的 Lv6 塔數量（0 = 禁用 Lv6）
 };

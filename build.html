@@ -106,8 +106,8 @@ document.getElementById('btn-build').onclick = async () => {
     try {
       const { text, size } = await readFile(dirHandle, jsPath);
       html = html.replace(
-        `<script src="${jsPath}"></script>`,
-        `<script>\n${text}\n</script>`
+        `<script src="${jsPath}"><\/script>`,
+        `<script>\n${text}\n<\/script>`
       );
       totalInline += size;
       addLog(`✅ ${jsPath} inline（${(size / 1024).toFixed(1)} KB）`, 'ok');

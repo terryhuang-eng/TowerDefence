@@ -16,4 +16,4 @@ this.canvas.width = w; this.canvas.height = h;
 
 | # | 步驟 | 狀態 | 檔案 |
 |---|------|------|------|
-| step1 | initGrid + resizeCanvas 套用 devicePixelRatio | ⬜ | js/game.js |
+| step1 | initGrid + resizeCanvas 套用 devicePixelRatio | ✅ | js/game.js |

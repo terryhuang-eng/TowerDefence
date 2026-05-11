@@ -513,8 +513,10 @@ class Game {
   initGrid() {
     const wrap = document.getElementById('canvas-wrap');
     const w = wrap.clientWidth, h = wrap.clientHeight;
-    this.canvas.width = w; this.canvas.height = h;
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = w * dpr; this.canvas.height = h * dpr;
     this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px';
+    this.ctx.scale(dpr, dpr);
 
     const topPad = 40;  // info-bar
     const botPad = 40;  // ai-bar
@@ -557,8 +559,10 @@ class Game {
     const wrap = document.getElementById('canvas-wrap');
     const w = wrap.clientWidth, h = wrap.clientHeight;
     if (w <= 0 || h <= 0) return;
-    this.canvas.width = w; this.canvas.height = h;
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = w * dpr; this.canvas.height = h * dpr;
     this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px';
+    this.ctx.scale(dpr, dpr);
     const topPad = 40;
     const botPad = 40;
     const totalRows = CONFIG.gridRows + 1 + 10 + 1;

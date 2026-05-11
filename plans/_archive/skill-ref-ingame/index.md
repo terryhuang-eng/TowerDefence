@@ -6,7 +6,7 @@
 |------|------|------|------|
 | 開始畫面 line 457 | 📖 技能說明 | `showSkillRef()` | 38 種技能效果 overlay（`#skill-ref-overlay`）|
 | 遊戲 top bar | 📖 說明 | `showInfoOverlay()` | 遊戲規則 4 tab overlay（`#info-overlay`）|
-| 遊戲內 | ❌ 無 | — | 技能說明無法在遊戲中查閱 |
+| 遊戲 top bar | 🔮 技能 | `showSkillRef()` | ✅ 已新增 |
 
 ## 設計決策
 

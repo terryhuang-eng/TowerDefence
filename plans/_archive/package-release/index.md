@@ -32,8 +32,8 @@
 
 | # | 步驟 | 狀態 | 改動檔案 |
 |---|------|------|---------|
-| step1 | ⬜ | `index.html`：autotest.js 改為 sandbox 條件動態載入 | index.html |
-| step2 | ⬜ | 新建 `build.html`：File System API 打包工具 | build.html（新建）|
+| step1 | ✅ | `index.html`：autotest.js 改為 sandbox 條件動態載入 | index.html |
+| step2 | ✅ | 新建 `build.html`：File System API 打包工具 | build.html（新建）|
 
 ---
 

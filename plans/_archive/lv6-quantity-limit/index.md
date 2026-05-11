@@ -53,6 +53,6 @@ maxLv6Towers: 1,  // 全場最多允許的 Lv6 塔數量（0 = 禁用 Lv6）
 
 | # | 步驟 | 狀態 | 改動檔案 |
 |---|------|------|---------|
-| step1 | ⬜ | `js/config.js`：加 `maxLv6Towers: 1` | js/config.js |
-| step2 | ⬜ | `js/game.js`：countLv6Towers + maxTowerLevel + UI × 3 處 | js/game.js |
-| step3 | ⬜ | `skill-editor.html`：config 面板 + exportConfig | skill-editor.html |
+| step1 | ✅ | `js/config.js`：加 `maxLv6Towers: 1` | js/config.js |
+| step2 | ✅ | `js/game.js`：countLv6Towers + maxTowerLevel + UI × 3 處 | js/game.js |
+| step3 | ✅ | `skill-editor.html`：config 面板 + exportConfig | skill-editor.html |

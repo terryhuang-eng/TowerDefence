@@ -388,9 +388,8 @@ class Game {
       // 純屬雙注（base==infuse）→ 可走 Lv6 路線
       if (t.infuseElem === t.elem) {
         const picks = this.elemPicks[t.elem] || 0;
-        const canLv6 = picks >= 3 &&
-                       (this.essencePerElem[t.elem] || 0) >= CONFIG.essenceLv6Threshold &&
-                       PURE_TOWERS[t.elem];
+        const canLv6 = picks >= 3 && PURE_TOWERS[t.elem] &&
+                       this.countLv6Towers() < (CONFIG.maxLv6Towers ?? 1);
         if (canLv6) return 6;
         const canLv5 = picks >= 2 && PURE_TOWERS[t.elem] && PURE_TOWERS[t.elem].lv5;
         if (canLv5) return 5;
@@ -473,6 +472,11 @@ class Game {
       if (TRIPLE_TOWERS[key]) return TRIPLE_TOWERS[key].lv5;
     }
     return INFUSIONS[elem][inf].lv4; // fallback
+  }
+
+  // 計算目前場上 Lv6 塔數量
+  countLv6Towers() {
+    return this.towers.filter(t => t.level >= 6).length;
   }
 
   // 取得可用的元素列表
@@ -968,28 +972,28 @@ class Game {
           opts.appendChild(btn);
         } else {
           // picks < 2，顯示未解鎖的 Lv6 路線提示
-          const ess = this.essencePerElem[t.elem] || 0;
-          const threshold = CONFIG.essenceLv6Threshold;
+          const lv6Count = this.countLv6Towers();
+          const maxLv6 = CONFIG.maxLv6Towers ?? 1;
           const nextData = pure.lv6;
           const has3rdPick = picks >= 3;
-          const hasEss = ess >= threshold;
+          const atLimit = lv6Count >= maxLv6;
           info.innerHTML = statsHtml + `
             <div style="margin-top:4px;color:#ffd93d;font-size:11px;">
-              ▶ Lv6 — 純屬終極路線（${ELEM[t.elem].icon}×3 + 精華 ${ess}/${threshold}）
+              ▶ Lv6 — 純屬終極路線（${ELEM[t.elem].icon}×3，全場限 ${maxLv6} 座，目前 ${lv6Count}）
             </div>`;
           const btn = document.createElement('div');
           btn.className = 'upgrade-opt';
-          btn.style.opacity = (this.gold >= nextData.cost && has3rdPick && hasEss) ? '1' : '0.4';
+          btn.style.opacity = (this.gold >= nextData.cost && has3rdPick && !atLimit) ? '1' : '0.4';
           const pickHint = picks >= 2 ? (has3rdPick ? '' : ` <span style="color:#e94560">需第3次${ELEM[t.elem].name}pick</span>`) : ` <span style="color:#e94560">需第2次${ELEM[t.elem].name}pick</span>`;
-          const essHint = hasEss ? '' : ` <span style="color:#e94560">精華不足(${ess}/${threshold})</span>`;
+          const limitHint = atLimit ? ` <span style="color:#e94560">Lv6上限已達（${lv6Count}/${maxLv6}）</span>` : '';
           btn.innerHTML = `
             <span style="font-size:14px">${pure.icon}</span>
             <span style="color:${ELEM[t.elem].color}">${pure.name}</span>
             <span style="color:#aaa;font-size:10px">DMG${nextData.damage} SPD${nextData.atkSpd} RNG${nextData.range}${nextData.aoe > 0 ? ' AOE'+nextData.aoe : ''}${nextData.skills && nextData.skills.length > 0 ? ` <span class="skill-tip" data-skills='${JSON.stringify(nextData.skills)}' style="color:#ffd93d;cursor:pointer;text-decoration:underline dotted;">${getSkillBrief(nextData.skills)} ℹ️</span>` : ''}</span>
             <span style="color:#888;font-size:10px">${nextData.desc}</span>
-            <span>💰${nextData.cost}${pickHint}${essHint}</span>`;
+            <span>💰${nextData.cost}${pickHint}${limitHint}</span>`;
           btn.onclick = () => {
-            if (this.gold < nextData.cost || !has3rdPick || !hasEss) return;
+            if (this.gold < nextData.cost || !has3rdPick || atLimit) return;
             this.gold -= nextData.cost;
             t.level = 6;
             t.thirdElem = t.elem;
@@ -1044,29 +1048,29 @@ class Game {
     // === Lv5 純屬 → Lv6 純屬終極 ===
     if (t.level === 5 && t.infuseElem === t.elem && !t.thirdElem && PURE_TOWERS[t.elem]) {
       const pure = PURE_TOWERS[t.elem];
-      const ess = this.essencePerElem[t.elem] || 0;
-      const threshold = CONFIG.essenceLv6Threshold;
+      const lv6Count = this.countLv6Towers();
+      const maxLv6 = CONFIG.maxLv6Towers ?? 1;
       const nextData = pure.lv6;
       const picks = this.elemPicks[t.elem] || 0;
       const has3rdPick = picks >= 3;
-      const hasEss = ess >= threshold;
+      const atLimit = lv6Count >= maxLv6;
       info.innerHTML = statsHtml + `
         <div style="margin-top:4px;color:#ffd93d;font-size:11px;">
-          ▶ Lv6 — 純屬終極（${ELEM[t.elem].icon}×3 + 精華 ${ess}/${threshold}）
+          ▶ Lv6 — 純屬終極（${ELEM[t.elem].icon}×3，全場限 ${maxLv6} 座，目前 ${lv6Count}）
         </div>`;
       const btn = document.createElement('div');
       btn.className = 'upgrade-opt';
-      btn.style.opacity = (this.gold >= nextData.cost && has3rdPick && hasEss) ? '1' : '0.4';
+      btn.style.opacity = (this.gold >= nextData.cost && has3rdPick && !atLimit) ? '1' : '0.4';
       const pickHint = has3rdPick ? '' : ` <span style="color:#e94560">需第3次${ELEM[t.elem].name}pick</span>`;
-      const essHint = hasEss ? '' : ` <span style="color:#e94560">精華不足(${ess}/${threshold})</span>`;
+      const limitHint = atLimit ? ` <span style="color:#e94560">Lv6上限已達（${lv6Count}/${maxLv6}）</span>` : '';
       btn.innerHTML = `
         <span style="font-size:14px">${pure.icon}</span>
         <span style="color:${ELEM[t.elem].color}">${pure.name}</span>
         <span style="color:#aaa;font-size:10px">DMG${nextData.damage} SPD${nextData.atkSpd} RNG${nextData.range}${nextData.aoe > 0 ? ' AOE'+nextData.aoe : ''}${nextData.skills && nextData.skills.length > 0 ? ` <span class="skill-tip" data-skills='${JSON.stringify(nextData.skills)}' style="color:#ffd93d;cursor:pointer;text-decoration:underline dotted;">${getSkillBrief(nextData.skills)} ℹ️</span>` : ''}</span>
         <span style="color:#888;font-size:10px">${nextData.desc}</span>
-        <span>💰${nextData.cost}${pickHint}${essHint}</span>`;
+        <span>💰${nextData.cost}${pickHint}${limitHint}</span>`;
       btn.onclick = () => {
-        if (this.gold < nextData.cost || !has3rdPick || !hasEss) return;
+        if (this.gold < nextData.cost || !has3rdPick || atLimit) return;
         this.gold -= nextData.cost;
         t.level = 6;
         t.thirdElem = t.elem;
@@ -2190,7 +2194,7 @@ class Game {
       }
       h += '</table>';
       // 純屬塔 Lv6
-      h += `<h3 style="color:#ff6bff;margin:12px 0 4px;">💎 純屬塔 Lv6（同元素×3 + 精華${CONFIG.essenceLv6Threshold}）</h3>`;
+      h += `<h3 style="color:#ff6bff;margin:12px 0 4px;">💎 純屬塔 Lv6（同元素×3，全場限 ${CONFIG.maxLv6Towers ?? 1} 座）</h3>`;
       h += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
       h += '<tr style="color:#ff6bff;border-bottom:1px solid #444;"><th>名稱</th><th>元素</th><th>傷害</th><th>攻速</th><th>射程</th><th>AOE</th><th>DPS</th><th>特效</th><th>費用</th></tr>';
       for (const [elem, pure] of Object.entries(PURE_TOWERS)) {

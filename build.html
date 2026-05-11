@@ -117,7 +117,7 @@ document.getElementById('btn-build').onclick = async () => {
   }
 
   // 3. 移除 autotest.js — 處理兩種寫法：
-  //    (a) 舊：<script src="autotest.js"></script>
+  //    (a) 舊：<script src="autotest.js"><\/script>
   //    (b) 新：if (sandbox==='1') { document.write('<script src="autotest.js">...') } 的整個 script 區塊
   html = html.replace(/<script src="autotest\.js"><\/script>/g, '');
   html = html.replace(

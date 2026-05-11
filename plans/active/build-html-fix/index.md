@@ -16,4 +16,4 @@ Line 122/124 的 regex 已是 `<\/script>`（正確）。
 
 | # | 步驟 | 狀態 | 檔案 |
 |---|------|------|------|
-| step1 | 修正 line 120 註解內的 `</script>` | ⬜ | build.html |
+| step1 | 修正 line 120 註解內的 `</script>` | ✅ | build.html |

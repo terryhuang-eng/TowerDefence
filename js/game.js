@@ -25,6 +25,7 @@ class Game {
 
     // v6: 不選起始元素，使用基礎塔
     this.elemPicks = Object.fromEntries(ELEM_KEYS.map(e => [e, 0]));
+    this.randomMode = false;
 
     // PVP 全玩家狀態追蹤
     this.pvpPlayerStates = {}; // { peerId: { name, hp, income, elems } }
@@ -1316,6 +1317,24 @@ class Game {
 
   // ── 元素選擇系統（Boss 過關獎勵）──
   showElementScreen() {
+    // 隨機模式：後續 pick 自動選元素，不顯示 UI
+    if (this.randomMode) {
+      const keys = getActiveKeys();
+      const ek = keys[Math.floor(Math.random() * keys.length)];
+      this.elemPicks[ek]++;
+      if (this.mode === 'pvp') this.netSend({ type: 'pickElement', elem: ek });
+      const incomeBonus = 15;
+      this.income += incomeBonus;
+      if (this.mode === 'pve') this.ai.income += incomeBonus;
+      this.announce(`🎲 隨機選到 ${ELEM[ek].icon} ${ELEM[ek].name}！收入 +${incomeBonus}`);
+      this.state = 'pre_wave';
+      this.myReady = false;
+      this.readyPlayers.clear();
+      this.showPreWave();
+      this.rebuildSidebar();
+      return;
+    }
+
     const overlay = document.getElementById('reward-overlay');
     const cardsDiv = document.getElementById('reward-cards');
     const title = overlay.querySelector('h2');
@@ -1376,6 +1395,35 @@ class Game {
         this.rebuildSidebar();
       };
       cardsDiv.appendChild(card);
+    }
+
+    // 第一次 pick 才出現隨機選項
+    if (this.getTotalPicks() === 0) {
+      const randCard = document.createElement('div');
+      randCard.className = 'reward-card';
+      randCard.innerHTML = `
+        <div class="reward-icon">🎲</div>
+        <div class="reward-name" style="color:#aaa;">隨機模式</div>
+        <div class="reward-desc">選擇後每次元素將隨機決定<br><span style="color:#4ecdc4;">賣塔全額 100% 返還</span></div>
+      `;
+      randCard.onclick = () => {
+        this.randomMode = true;
+        const keys = getActiveKeys();
+        const ek = keys[Math.floor(Math.random() * keys.length)];
+        this.elemPicks[ek]++;
+        if (this.mode === 'pvp') this.netSend({ type: 'pickElement', elem: ek });
+        const incomeBonus = 15;
+        this.income += incomeBonus;
+        if (this.mode === 'pve') this.ai.income += incomeBonus;
+        this.announce(`🎲 隨機模式啟動！選到 ${ELEM[ek].icon} ${ELEM[ek].name}，收入 +${incomeBonus}，賣塔全額返還`);
+        overlay.style.display = 'none';
+        this.state = 'pre_wave';
+        this.myReady = false;
+        this.readyPlayers.clear();
+        this.showPreWave();
+        this.rebuildSidebar();
+      };
+      cardsDiv.appendChild(randCard);
     }
   }
 

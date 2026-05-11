@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>🔨 Build Tool — Tower Defense</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#1a1a2e; color:#eee; font-family:'Segoe UI',sans-serif; padding:32px; }
+h1 { font-size:18px; color:#ffd93d; margin-bottom:8px; }
+p.desc { font-size:12px; color:#888; margin-bottom:24px; }
+.btn-row { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
+button { padding:10px 20px; background:#0f3460; border:1px solid #4ecdc4; color:#4ecdc4;
+         border-radius:6px; cursor:pointer; font-size:13px; transition:all 0.15s; }
+button:hover { background:#1a4a70; }
+button:disabled { opacity:0.4; cursor:default; }
+#dir-label { font-size:12px; color:#888; }
+#log { margin-top:16px; background:#0a0a1e; border:1px solid #222; border-radius:8px;
+       padding:16px; font-size:12px; line-height:2; min-height:180px;
+       white-space:pre-wrap; font-family:'Consolas',monospace; }
+.ok   { color:#4ecdc4; }
+.err  { color:#e94560; }
+.warn { color:#ffd93d; }
+.info { color:#888; }
+</style>
+</head>
+<body>
+<h1>🔨 Tower Defense — Build Tool</h1>
+<p class="desc">將 js/*.js 全部 inline 進單一 game.html，供玩家直接開啟使用。</p>
+
+<div class="btn-row">
+  <button id="btn-dir">📁 選擇專案目錄</button>
+  <button id="btn-build" disabled>🔨 建置 game.html</button>
+  <span id="dir-label">尚未選擇目錄</span>
+</div>
+
+<div id="log"><span class="info">點擊「選擇專案目錄」，選擇 tower-defense-prototype/ 資料夾後開始建置。</span></div>
+
+<script>
+const JS_FILES = [
+  'js/config.js',
+  'js/skills.js',
+  'js/sends.js',
+  'js/towers.js',
+  'js/waves.js',
+  'js/game.js',
+];
+
+let dirHandle = null;
+const logEl = document.getElementById('log');
+const dirLabel = document.getElementById('dir-label');
+const btnBuild = document.getElementById('btn-build');
+
+function addLog(msg, cls = 'info') {
+  logEl.innerHTML += `<span class="${cls}">${msg}</span>\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function clearLog() {
+  logEl.innerHTML = '';
+}
+
+// ── 讀取子目錄下的檔案 ──
+async function readFile(rootHandle, filePath) {
+  const parts = filePath.split('/');
+  let handle = rootHandle;
+  for (let i = 0; i < parts.length - 1; i++) {
+    handle = await handle.getDirectoryHandle(parts[i]);
+  }
+  const fh = await handle.getFileHandle(parts[parts.length - 1]);
+  const file = await fh.getFile();
+  return { text: await file.text(), size: file.size };
+}
+
+document.getElementById('btn-dir').onclick = async () => {
+  try {
+    dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+    dirLabel.textContent = `已選擇：${dirHandle.name}/`;
+    dirLabel.style.color = '#4ecdc4';
+    btnBuild.disabled = false;
+    clearLog();
+    addLog(`✅ 目錄已選擇：${dirHandle.name}`, 'ok');
+  } catch (e) {
+    if (e.name !== 'AbortError') addLog('❌ 選擇目錄失敗', 'err');
+  }
+};
+
+document.getElementById('btn-build').onclick = async () => {
+  if (!dirHandle) return;
+  clearLog();
+  addLog('🔧 開始建置...\n', 'info');
+
+  // 1. 讀取 index.html
+  let html;
+  try {
+    const { text, size } = await readFile(dirHandle, 'index.html');
+    html = text;
+    addLog(`✅ index.html（${(size / 1024).toFixed(1)} KB）`, 'ok');
+  } catch (e) {
+    addLog('❌ 找不到 index.html，請確認選擇正確的專案根目錄', 'err');
+    return;
+  }
+
+  // 2. Inline 各 JS 檔
+  let totalInline = 0;
+  for (const jsPath of JS_FILES) {
+    try {
+      const { text, size } = await readFile(dirHandle, jsPath);
+      html = html.replace(
+        `<script src="${jsPath}"></script>`,
+        `<script>\n${text}\n</script>`
+      );
+      totalInline += size;
+      addLog(`✅ ${jsPath} inline（${(size / 1024).toFixed(1)} KB）`, 'ok');
+    } catch (e) {
+      addLog(`⚠️  ${jsPath} 讀取失敗，略過`, 'warn');
+    }
+  }
+
+  // 3. 移除 autotest.js — 處理兩種寫法：
+  //    (a) 舊：<script src="autotest.js"></script>
+  //    (b) 新：if (sandbox==='1') { document.write('<script src="autotest.js">...') } 的整個 script 區塊
+  html = html.replace(/<script src="autotest\.js"><\/script>/g, '');
+  html = html.replace(
+    /<script>\s*if \(new URLSearchParams\(location\.search\)[\s\S]*?<\/script>/g,
+    ''
+  );
+  addLog('✅ autotest.js 已從輸出移除', 'ok');
+
+  // 4. 輸出統計
+  const outSize = new TextEncoder().encode(html).length;
+  addLog(`\n📦 輸出大小：${(outSize / 1024).toFixed(1)} KB（inline JS：${(totalInline / 1024).toFixed(1)} KB）`, 'info');
+
+  // 5. 下載
+  try {
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'game.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addLog('⬇️  game.html 下載完成 — 直接傳給玩家即可！', 'ok');
+  } catch (e) {
+    addLog(`❌ 下載失敗：${e.message}`, 'err');
+  }
+};
+</script>
+</body>
+</html>

@@ -482,7 +482,11 @@ canvas { display: block; touch-action: manipulation; }
 <script src="js/towers.js"></script>
 <script src="js/waves.js"></script>
 <script src="js/game.js"></script>
-<script src="autotest.js"></script>
+<script>
+if (new URLSearchParams(location.search).get('sandbox') === '1') {
+  document.write('<script src="autotest.js"><\/script>');
+}
+</script>
 
 <!-- ── Sandbox Panel ─────────────────────────────────────────── -->
 <style>

@@ -58,9 +58,6 @@ class Game {
     this.aiThirdElem = null; // AI 第三元素（Lv5 三屬）
     this.aiBaseElem = null; // AI 的元素（W3 後隨機選）
 
-    // 精華系統（Phase 3）
-    this.essencePerElem = Object.fromEntries(ELEM_KEYS.map(e => [e, 0]));
-    this.essenceMilestonesReached = 0; // 已達到的里程碑數量
     this.aiEssencePerElem = Object.fromEntries(ELEM_KEYS.map(e => [e, 0]));
 
     this.difficulty = difficulty || 'x1';
@@ -1091,16 +1088,6 @@ class Game {
   }
 
   // 精華里程碑檢查（總精華達到門檻時觸發送兵 HP 加成）
-  checkEssenceMilestones() {
-    const total = Object.values(this.essencePerElem).reduce((a, b) => a + b, 0);
-    const milestones = CONFIG.essenceMilestones;
-    const reached = milestones.filter(m => total >= m).length;
-    if (reached > this.essenceMilestonesReached) {
-      this.essenceMilestonesReached = reached;
-      const bonusPct = Math.round(reached * CONFIG.essenceMilestoneBonus * 100);
-      this.addBattleLog('player', `✨ 精華里程碑！送兵 HP +${bonusPct}%（共 ${total} 精華）`);
-    }
-  }
 
   sellTower(t) {
     const sellValue = Math.floor((t.totalCost || CONFIG.towerCost) * 0.8);
@@ -1646,12 +1633,9 @@ class Game {
       }
     }
 
-    // 精華里程碑：送兵 HP 加成
-    const essenceMilestoneHpMult = 1 + this.essenceMilestonesReached * CONFIG.essenceMilestoneBonus;
     for (const s of this.playerSendQueue) {
-      const boostedHp = Math.round(s.hp * essenceMilestoneHpMult);
       this.aiLaneSpawnQueue.push({
-        hp: boostedHp, maxHp: boostedHp, speed: s.speed, armor: s.armor,
+        hp: s.hp, maxHp: s.hp, speed: s.speed, armor: s.armor,
         dmgToBase: s.dmgToBase, color: s.color, icon: s.icon, name: s.name,
         skills: s.skills || [], pathIdx: 0,
       });
@@ -2969,12 +2953,6 @@ class Game {
         const tp = this.ePos(target);
         const twColor = tw.elem ? ELEM[tw.elem].color : (tw.basicType === 'cannon' ? '#8888aa' : '#c8a86c');
         this.projectiles.push({x:tw.x, y:tw.y, tx:tp.x, ty:tp.y, color: twColor, t:0.15});
-
-        // 精華累積：純屬 Lv3 塔（有 elem、無 infuseElem、無 thirdElem、非無屬）
-        if (tw.elem && !tw.infuseElem && !tw.thirdElem && tw.elem !== 'none' && tw.level === 3) {
-          this.essencePerElem[tw.elem] = (this.essencePerElem[tw.elem] || 0) + 1;
-          this.checkEssenceMilestones();
-        }
 
         // chain: 連鎖跳躍到鄰近敵人
         const chainSk = getSkill(tw, 'chain');

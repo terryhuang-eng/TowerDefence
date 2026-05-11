@@ -2501,7 +2501,7 @@ class Game {
       if (hpPctSk && (tower.atkCount || 0) % hpPctSk.every === 0) {
         if (!enemy._hpPctCd || enemy._hpPctCd <= 0) {
           const rawHpDmg = Math.floor(enemy.maxHp * hpPctSk.pct);
-          const hpDmg = hpPctSk.cap ? Math.min(rawHpDmg, hpPctSk.cap) : rawHpDmg;
+          const hpDmg = Math.min(rawHpDmg, GLOBAL_CAPS.hpPctCap);
           enemy.hp -= hpDmg;
           enemy._hpPctCd = hpPctSk.cd;
         }

@@ -28,7 +28,7 @@ const SKILL_DEFS = {
   // ── 塔：傷害類 ──
   burn        : { category: 'tower', group: 'damage', name: '灼燒', defaults: {dot:0.3,dur:3}, desc: '每秒 dot×DPS 傷害，持續 dur 秒。吃護甲。覆蓋時觸發 ignite', scoreBase: 23, scorePrimary: 'dot', scoreRef: 0.3 },
   ignite      : { category: 'tower', group: 'damage', name: '引燃', defaults: {flat:0.2}, desc: '灼燒覆蓋時造成 flat×ATK 傷害', scoreBase: 12, scorePrimary: 'flat', scoreRef: 0.2 },
-  detonate    : { category: 'tower', group: 'damage', name: '引爆', defaults: {ratio:0.8}, desc: '消耗灼燒，ratio×ATK 真傷（無視護甲）', scoreBase: 25, scorePrimary: 'ratio', scoreRef: 0.8 },
+  detonate    : { category: 'tower', group: 'damage', name: '引爆', defaults: {ratio:0.8}, desc: '消耗灼燒，ratio×ATK 真傷（無視護甲）', scoreBase: 30, scorePrimary: 'ratio', scoreRef: 0.8 },
   chain       : { category: 'tower', group: 'damage', name: '連鎖', defaults: {targets:2,decay:0.7}, desc: '跳到鄰近 targets 個敵人，每跳 ×decay', scoreBase: 20, scorePrimary: 'targets', scoreRef: 2 },
   execute     : { category: 'tower', group: 'damage', name: '斬殺', defaults: {threshold:0.15,mult:2}, desc: 'HP < threshold 時傷害 ×mult', scoreBase: 20, scorePrimary: null, scoreRef: null },
   hpPct       : { category: 'tower', group: 'damage', name: '%HP傷害', defaults: {pct:0.03,every:3,cd:0.5}, desc: '每 every 次附加 pct% 最大HP傷害', scoreBase: 20, scorePrimary: 'pct', scoreRef: 0.03 },

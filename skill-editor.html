@@ -380,6 +380,7 @@ function renderScoreDefsPanel() {
     vulnDecayRate:   'vulnDecayRate (stacks/s)',
     procMinInterval: 'procMinInterval (s)',
     hpPctCd:         'hpPctCd (s)',
+    hpPctCap:        'hpPctCap（每次上限）',
   };
   html += `<div style="margin-top:8px;border-top:1px solid #444;padding-top:6px;padding:6px 8px"><b>GLOBAL_CAPS</b></div>`;
   for (const [key, val] of Object.entries(editData.globalCaps)) {
@@ -1874,6 +1875,7 @@ function exportSkills(mode) {
     vulnDecayRate:   '// 每秒 -1.5 層',
     procMinInterval: '// proc 最小間隔 0.3 秒',
     hpPctCd:         '// %HP 傷害每目標冷卻 0.5 秒',
+    hpPctCap:        '// %HP 傷害每次上限（防 Boss 秒殺）',
   };
   lines.push('// 全域上限');
   lines.push('const GLOBAL_CAPS = {');

@@ -1741,6 +1741,7 @@ function renderConfigPanel() {
     { key:'startGold', label:'起始金幣' }, { key:'startHP', label:'起始HP' },
     { key:'baseIncome', label:'基礎收入' }, { key:'towerCost', label:'塔費用(Lv1)' },
     { key:'killGoldAiSend', label:'AI送兵擊殺金' }, { key:'totalWaves', label:'總波數' },
+    { key:'maxLv6Towers', label:'Lv6上限（座）' },
   ];
   for (const f of ecoFields) {
     html += `<div class="field"><label>${f.label}</label><input type="number" step="any" value="${c[f.key]}" onchange="editData.config.${f.key}=parseFloat(this.value)||0"></div>`;
@@ -1983,6 +1984,7 @@ function exportConfig(mode) {
   lines.push(`  gridCols: ${c.gridCols},`);
   lines.push(`  gridRows: ${c.gridRows},`);
   lines.push(`  totalWaves: ${c.totalWaves},`);
+  lines.push(`  maxLv6Towers: ${c.maxLv6Towers ?? 1},   // 全場最多允許的 Lv6 塔數量（0 = 禁用 Lv6）`);
   lines.push('};');
   lines.push('');
   doExport(lines.join('\n'), 'config.js', mode);

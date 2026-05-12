@@ -1931,8 +1931,7 @@ class Game {
   // ── Events ──
   toGrid(e) {
     const r = this.canvas.getBoundingClientRect();
-    const sx = this.canvas.width / r.width, sy = this.canvas.height / r.height;
-    const mx = (e.clientX - r.left) * sx, my = (e.clientY - r.top) * sy;
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
     return { gx: Math.floor((mx - this.offsetX) / this.cellSize), gy: Math.floor((my - this.offsetY) / this.cellSize) };
   }
 
@@ -2259,8 +2258,7 @@ class Game {
 
   findEnemyAtClick(e) {
     const r = this.canvas.getBoundingClientRect();
-    const sx = this.canvas.width / r.width, sy = this.canvas.height / r.height;
-    const mx = (e.clientX - r.left) * sx, my = (e.clientY - r.top) * sy;
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
     const cs = this.cellSize;
     const hitR = cs * 0.4; // 點擊判定半徑
 

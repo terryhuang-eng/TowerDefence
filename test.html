@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>🧪 Tests — Tower Defense</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a1e; color: #eee; font-family: 'Consolas', 'Courier New', monospace; padding: 24px; font-size: 13px; line-height: 1.8; }
+h1 { font-size: 16px; color: #ffd93d; margin-bottom: 4px; }
+.meta { font-size: 11px; color: #555; margin-bottom: 16px; }
+#summary { padding: 10px 14px; border-radius: 6px; font-size: 14px; font-weight: bold; margin-bottom: 16px; }
+.summary-pass { background: #0d2b1a; border: 1px solid #4ecdc4; color: #4ecdc4; }
+.summary-fail { background: #2b0d0d; border: 1px solid #e94560; color: #e94560; }
+#results { max-width: 860px; }
+.section { color: #888; font-size: 11px; margin: 14px 0 4px; border-bottom: 1px solid #222; padding-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+.pass { color: #4ecdc4; padding: 1px 0; }
+.fail { color: #e94560; padding: 1px 0; font-weight: bold; }
+.detail { color: #ffd93d; font-size: 11px; font-weight: normal; }
+</style>
+</head>
+<body>
+
+<h1>🧪 Tower Defense — Test Suite</h1>
+<div class="meta" id="meta">載入中…</div>
+<div id="summary"></div>
+<div id="results"></div>
+
+<script src="js/config.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/sends.js"></script>
+<script src="js/towers.js"></script>
+<script src="js/waves.js"></script>
+
+<script>
+// ============================================================
+// 斷言框架
+// ============================================================
+let passed = 0, failed = 0;
+const resultsEl = document.getElementById('results');
+
+function section(title) {
+  resultsEl.innerHTML += `<div class="section">${title}</div>`;
+}
+
+function assert(condition, label, detail) {
+  if (condition) {
+    passed++;
+    resultsEl.innerHTML += `<div class="pass">✅ ${label}</div>`;
+  } else {
+    failed++;
+    const det = detail ? ` <span class="detail">— ${detail}</span>` : '';
+    resultsEl.innerHTML += `<div class="fail">❌ ${label}${det}</div>`;
+  }
+}
+
+function assertEqual(actual, expected, label) {
+  assert(
+    actual === expected,
+    label,
+    actual !== expected ? `期望 ${JSON.stringify(expected)}，實際 ${JSON.stringify(actual)}` : undefined
+  );
+}
+
+function assertDefined(val, label) {
+  assert(val !== undefined && val !== null, label, val == null ? `值為 ${val}` : undefined);
+}
+
+function assertPositive(val, label) {
+  assert(typeof val === 'number' && val > 0, label, `值為 ${val}`);
+}
+
+// ============================================================
+// Layer 1：資料完整性測試
+// ============================================================
+function runTests() {
+
+  // ── CONFIG 必要欄位 ──────────────────────────────────────
+  section('CONFIG 必要欄位');
+  ['startGold','startHP','baseIncome','towerCost','maxLv6Towers','gridCols','gridRows'].forEach(key => {
+    assertDefined(CONFIG[key], `CONFIG.${key}`);
+  });
+
+  // ── BASIC_TOWERS 完整性 ──────────────────────────────────
+  section('BASIC_TOWERS 完整性');
+  ['arrow','cannon'].forEach(type => {
+    const bt = BASIC_TOWERS[type];
+    assert(!!bt, `BASIC_TOWERS.${type} 存在`);
+    assert(Array.isArray(bt?.levels) && bt.levels.length >= 2, `BASIC_TOWERS.${type} 有 ≥2 個等級`);
+    bt?.levels?.forEach((lv, i) => {
+      assertPositive(lv.cost,   `BASIC_TOWERS.${type} Lv${i+1}.cost > 0`);
+      assertPositive(lv.damage, `BASIC_TOWERS.${type} Lv${i+1}.damage > 0`);
+    });
+  });
+
+  // ── ELEM_BASE 完整性 ─────────────────────────────────────
+  section('ELEM_BASE 完整性（6 元素 × 2 基底 = 12 種 Lv3 塔）');
+  ELEM_KEYS.forEach(elem => {
+    ['arrow','cannon'].forEach(base => {
+      const eb = ELEM_BASE[elem]?.[base];
+      assert(!!eb, `ELEM_BASE[${elem}][${base}] 存在`);
+      if (eb) {
+        assertPositive(eb.cost,   `ELEM_BASE[${elem}][${base}].cost > 0`);
+        assertPositive(eb.damage, `ELEM_BASE[${elem}][${base}].damage > 0`);
+      }
+    });
+  });
+
+  // ── INFUSIONS 完整性（6×6 = 36 種 Lv4 塔）────────────────
+  section('INFUSIONS 完整性（6×6 = 36 種 Lv4）');
+  ELEM_KEYS.forEach(base => {
+    ELEM_KEYS.forEach(inj => {
+      const lv4 = INFUSIONS[base]?.[inj]?.lv4;
+      assert(!!lv4, `INFUSIONS[${base}][${inj}].lv4 存在`);
+      if (lv4) {
+        assertPositive(lv4.cost,   `INFUSIONS[${base}][${inj}].lv4.cost > 0`);
+        assertPositive(lv4.damage, `INFUSIONS[${base}][${inj}].lv4.damage > 0`);
+        assertPositive(lv4.atkSpd, `INFUSIONS[${base}][${inj}].lv4.atkSpd > 0`);
+        assertPositive(lv4.range,  `INFUSIONS[${base}][${inj}].lv4.range > 0`);
+      }
+    });
+  });
+
+  // ── TRIPLE_TOWERS 完整性（20 種）─────────────────────────
+  section('TRIPLE_TOWERS 完整性（20 種 Lv5 三屬塔）');
+  const tripleKeys = Object.keys(TRIPLE_TOWERS);
+  assertEqual(tripleKeys.length, 20, `TRIPLE_TOWERS 共有 20 個 key`);
+  tripleKeys.forEach(key => {
+    const lv5 = TRIPLE_TOWERS[key]?.lv5;
+    assert(!!lv5, `TRIPLE_TOWERS['${key}'].lv5 存在`);
+    if (lv5) {
+      assertPositive(lv5.cost,   `TRIPLE_TOWERS['${key}'].lv5.cost > 0`);
+      assertPositive(lv5.damage, `TRIPLE_TOWERS['${key}'].lv5.damage > 0`);
+    }
+  });
+
+  // ── PURE_TOWERS 完整性（6 種）────────────────────────────
+  section('PURE_TOWERS 完整性（6 種純屬 Lv5 + Lv6）');
+  ELEM_KEYS.forEach(elem => {
+    const p = PURE_TOWERS[elem];
+    assert(!!p, `PURE_TOWERS[${elem}] 存在`);
+    assert(!!p?.lv5, `PURE_TOWERS[${elem}].lv5 存在`);
+    assert(!!p?.lv6, `PURE_TOWERS[${elem}].lv6 存在`);
+    if (p?.lv5) assertPositive(p.lv5.cost, `PURE_TOWERS[${elem}].lv5.cost > 0`);
+    if (p?.lv6) assertPositive(p.lv6.cost, `PURE_TOWERS[${elem}].lv6.cost > 0`);
+  });
+
+  // ── 技能 type 合法性 ──────────────────────────────────────
+  section('技能 type 合法性（所有 towers skills 的 .type 存在於 SKILL_DEFS）');
+  const validSkillTypes = new Set(Object.keys(SKILL_DEFS));
+  const towerDatasets = [
+    ...ELEM_KEYS.flatMap(e => ['arrow','cannon'].map(b => ELEM_BASE[e]?.[b])).filter(Boolean),
+    ...ELEM_KEYS.flatMap(base => ELEM_KEYS.map(inj => INFUSIONS[base]?.[inj]?.lv4)).filter(Boolean),
+    ...Object.values(TRIPLE_TOWERS).map(t => t.lv5).filter(Boolean),
+    ...ELEM_KEYS.flatMap(e => [PURE_TOWERS[e]?.lv5, PURE_TOWERS[e]?.lv6]).filter(Boolean),
+  ];
+  let badSkillCount = 0;
+  towerDatasets.forEach(lvData => {
+    (lvData.skills || []).forEach(sk => {
+      if (!validSkillTypes.has(sk.type)) {
+        badSkillCount++;
+        assert(false, `未知技能 type: "${sk.type}"`);
+      }
+    });
+  });
+  if (badSkillCount === 0) {
+    assert(true, `所有塔技能 type 均合法（共檢查 ${towerDatasets.length} 筆資料）`);
+  }
+
+  // ── WAVES 完整性（20 波）──────────────────────────────────
+  section('WAVES 完整性（20 波，含 killGold）');
+  assertEqual(WAVES.length, 20, 'WAVES 共有 20 波');
+  WAVES.forEach((w, i) => {
+    assertDefined(w.killGold, `WAVES[${i}]（W${i+1}: ${w.name}）有 killGold`);
+    assertDefined(w.count,    `WAVES[${i}]（W${i+1}）有 count`);
+    assertDefined(w.hp,       `WAVES[${i}]（W${i+1}）有 hp`);
+  });
+
+  // ── INCOME_SENDS 完整性（6 種）───────────────────────────
+  section('INCOME_SENDS 完整性（6 種送兵，含配額陣列）');
+  assertEqual(INCOME_SENDS.length, 6, 'INCOME_SENDS 共有 6 種送兵');
+  ['id','name','icon','cost','income','count','hp','dmgToBase','quota'].forEach(key => {
+    INCOME_SENDS.forEach((s, i) => {
+      assertDefined(s[key], `INCOME_SENDS[${i}](${s.id}).${key}`);
+    });
+  });
+  INCOME_SENDS.forEach(s => {
+    assertEqual(s.quota.length, 10, `INCOME_SENDS(${s.id}).quota 有 10 階`);
+  });
+
+  // ── getSendQuota 邏輯驗證 ────────────────────────────────
+  section('getSendQuota 波次配額驗證');
+  // tier = Math.min(9, Math.floor((wave - 1) / 2))
+  // scout.quota:    [6,7,8,9,10,12,14,16,18,20]
+  // warrior.quota:  [0,2,3,4,4,5,6,7,8,9]
+  // knight.quota:   [0,1,2,3,4,5,5,6,7,8]
+  // mage.quota:     [0,0,0,1,1,2,2,3,4,5]
+  // elite.quota:    [0,0,0,0,1,1,1,2,3,4]
+  // champion.quota: [0,0,0,0,0,0,1,1,2,3]
+  // 格式：[id, wave, expectedQuota]
+  [
+    ['scout',    1,   6],  // tier=0
+    ['scout',    2,   6],  // tier=0 (floor(0.5)=0)
+    ['scout',    3,   7],  // tier=1
+    ['scout',    20, 20],  // tier=9
+    ['warrior',  1,   0],  // tier=0
+    ['warrior',  4,   2],  // tier=1
+    ['warrior',  5,   3],  // tier=2
+    ['warrior',  20,  9],  // tier=9
+    ['knight',   1,   0],  // tier=0
+    ['knight',   3,   1],  // tier=1
+    ['knight',   5,   2],  // tier=2
+    ['mage',     1,   0],  // tier=0
+    ['mage',     7,   1],  // tier=3
+    ['mage',     11,  2],  // tier=5
+    ['elite',    1,   0],  // tier=0
+    ['elite',    9,   1],  // tier=4
+    ['elite',    15,  2],  // tier=7
+    ['champion', 1,   0],  // tier=0
+    ['champion', 13,  1],  // tier=6
+    ['champion', 17,  2],  // tier=8
+  ].forEach(([id, wave, expected]) => {
+    const actual = getSendQuota(id, wave);
+    assertEqual(actual, expected, `getSendQuota('${id}', W${wave}) = ${expected}`);
+  });
+
+}
+
+// ============================================================
+// Layer 2：升級邏輯測試（Mock Game）
+// ============================================================
+
+// ── Mock Game 工廠 ───────────────────────────────────────
+function makeMockGame(gold, elemPicksOverride) {
+  const picks = Object.fromEntries(ELEM_KEYS.map(e => [e, 0]));
+  Object.assign(picks, elemPicksOverride || {});
+  return {
+    gold,
+    elemPicks: picks,
+    mode: 'pve',
+    towers: [],
+    countLv6Towers() { return this.towers.filter(t => t.level === 6).length; },
+    getAvailableElements() {
+      return ELEM_KEYS.filter(e => this.elemPicks[e] > 0);
+    },
+    getAvailableInjects(baseElem) {
+      // 與 game.js 一致：有 pick 的元素都可注入
+      return ELEM_KEYS.filter(e => this.elemPicks[e] > 0);
+    },
+    getAvailableThirdElems(elem, infuseElem) {
+      return ELEM_KEYS.filter(e => this.elemPicks[e] > 0 && e !== elem && e !== infuseElem);
+    },
+    getTripleKey(e1, e2, e3) { return [e1, e2, e3].sort().join('_'); },
+    netSend() {},
+    rebuildSidebar() {},
+    buildHUD() {},
+    // 升級選項（複製自 game.js _getMobileUpgradeOptions，同步版本：2026-05-13）
+    // ⚠️ 若修改 game.js _getMobileUpgradeOptions，需同步更新此複製版
+    _getMobileUpgradeOptions(tw) {
+      const opts = [];
+      const isBasic = !tw.elem;
+      const lv = tw.level;
+
+      if (lv === 1 && isBasic) {
+        const bDef = BASIC_TOWERS[tw.basicType || 'arrow'];
+        const nextData = bDef.levels[1];
+        opts.push({ label: '⬆️Lv2', cost: nextData.cost, action: () => {
+          tw.level = 2; tw.totalCost = (tw.totalCost || 0) + nextData.cost;
+          Object.assign(tw, { damage: nextData.damage, atkSpd: nextData.atkSpd, range: nextData.range, aoe: nextData.aoe, skills: nextData.skills || [] });
+          if (nextData.dmgType !== undefined) tw.dmgType = nextData.dmgType || null;
+        }});
+      } else if (lv === 2 && isBasic) {
+        const avail = this.getAvailableElements();
+        for (const elem of avail) {
+          const basicType = tw.basicType || 'arrow';
+          const eb = ELEM_BASE[elem] && ELEM_BASE[elem][basicType];
+          if (!eb) continue;
+          const e = elem;
+          opts.push({ label: `${ELEM[e].icon}Lv3`, cost: eb.cost, action: () => {
+            tw.level = 3; tw.elem = e; tw.infuseElem = null;
+            tw.totalCost = (tw.totalCost || 0) + eb.cost;
+            Object.assign(tw, { damage: eb.damage, atkSpd: eb.atkSpd, range: eb.range, aoe: eb.aoe, skills: eb.skills || [] });
+            if (eb.dmgType !== undefined) tw.dmgType = eb.dmgType || null;
+          }});
+        }
+      } else if (lv === 3 && tw.elem && !tw.infuseElem) {
+        const availInjects = this.getAvailableInjects(tw.elem);
+        for (const injElem of availInjects) {
+          const inf = INFUSIONS[tw.elem] && INFUSIONS[tw.elem][injElem];
+          if (!inf) continue;
+          const lvData = inf.lv4;
+          const ie = injElem;
+          const pureTag = tw.elem === injElem ? '✨' : '';
+          opts.push({ label: `${ELEM[ie].icon}${pureTag}注入`, cost: lvData.cost, action: () => {
+            tw.level = 4; tw.infuseElem = ie;
+            tw.totalCost = (tw.totalCost || 0) + lvData.cost;
+            Object.assign(tw, { damage: lvData.damage, atkSpd: lvData.atkSpd, range: lvData.range, aoe: lvData.aoe, skills: lvData.skills || [] });
+            if (lvData.dmgType !== undefined) tw.dmgType = lvData.dmgType || null;
+          }});
+        }
+      } else if (lv === 4 && tw.infuseElem) {
+        if (tw.infuseElem === tw.elem && PURE_TOWERS[tw.elem]) {
+          const pure = PURE_TOWERS[tw.elem];
+          const picks = this.elemPicks[tw.elem] || 0;
+          const lv6Count = this.countLv6Towers();
+          const maxLv6 = CONFIG.maxLv6Towers || 1;
+          if (pure.lv5 && picks >= 2) {
+            const nd5 = pure.lv5;
+            opts.push({ label: `${ELEM[tw.elem].icon}×2 Lv5`, cost: nd5.cost, action: () => {
+              tw.level = 5; tw.totalCost = (tw.totalCost || 0) + nd5.cost;
+              Object.assign(tw, { damage: nd5.damage, atkSpd: nd5.atkSpd, range: nd5.range, aoe: nd5.aoe, skills: nd5.skills || [] });
+              if (nd5.dmgType !== undefined) tw.dmgType = nd5.dmgType || null;
+            }});
+          } else if (pure.lv6 && picks >= 3 && lv6Count < maxLv6) {
+            const nd6 = pure.lv6;
+            opts.push({ label: `${ELEM[tw.elem].icon}×3 Lv6`, cost: nd6.cost, action: () => {
+              if (this.countLv6Towers() >= maxLv6) return;
+              tw.level = 6; tw.thirdElem = tw.elem;
+              tw.totalCost = (tw.totalCost || 0) + nd6.cost;
+              Object.assign(tw, { damage: nd6.damage, atkSpd: nd6.atkSpd, range: nd6.range, aoe: nd6.aoe, skills: nd6.skills || [] });
+              if (nd6.dmgType !== undefined) tw.dmgType = nd6.dmgType || null;
+            }});
+          }
+        } else {
+          const avail3rd = this.getAvailableThirdElems(tw.elem, tw.infuseElem);
+          for (const e3 of avail3rd) {
+            const key = this.getTripleKey(tw.elem, tw.infuseElem, e3);
+            const triple = TRIPLE_TOWERS[key];
+            if (!triple) continue;
+            const nd = triple.lv5;
+            const te = e3;
+            opts.push({ label: `${ELEM[te].icon}Lv5`, cost: nd.cost, action: () => {
+              tw.level = 5; tw.thirdElem = te;
+              tw.totalCost = (tw.totalCost || 0) + nd.cost;
+              Object.assign(tw, { damage: nd.damage, atkSpd: nd.atkSpd, range: nd.range, aoe: nd.aoe, skills: nd.skills || [] });
+              if (nd.dmgType !== undefined) tw.dmgType = nd.dmgType || null;
+            }});
+          }
+        }
+      } else if (lv === 5 && tw.infuseElem === tw.elem && !tw.thirdElem && PURE_TOWERS[tw.elem]) {
+        const pure = PURE_TOWERS[tw.elem];
+        const picks = this.elemPicks[tw.elem] || 0;
+        const lv6Count = this.countLv6Towers();
+        const maxLv6 = CONFIG.maxLv6Towers ?? 1;
+        if (pure.lv6 && picks >= 3 && lv6Count < maxLv6) {
+          const nd6 = pure.lv6;
+          opts.push({ label: `${ELEM[tw.elem].icon}×3 Lv6`, cost: nd6.cost, action: () => {
+            if (this.countLv6Towers() >= maxLv6) return;
+            tw.level = 6; tw.thirdElem = tw.elem;
+            tw.totalCost = (tw.totalCost || 0) + nd6.cost;
+            Object.assign(tw, { damage: nd6.damage, atkSpd: nd6.atkSpd, range: nd6.range, aoe: nd6.aoe, skills: nd6.skills || [] });
+            if (nd6.dmgType !== undefined) tw.dmgType = nd6.dmgType || null;
+          }});
+        }
+      }
+      return opts;
+    },
+  };
+}
+
+// ── 模擬 showTowerActionPopup 的 onclick 行為 ─────────────
+function simulateUpgradeClick(game, tw) {
+  const opts = game._getMobileUpgradeOptions(tw);
+  if (opts.length === 0) return { opts, goldSpent: 0 };
+  const upg = opts[0];
+  if (game.gold < upg.cost) return { opts, goldSpent: 0 };
+  game.gold -= upg.cost;   // 與 step2 修正後的 showTowerActionPopup 一致
+  upg.action.call(game);
+  return { opts, goldSpent: upg.cost };
+}
+
+function runLayer2Tests() {
+
+  // ── Lv4 純屬塔升級選項 ────────────────────────────────────
+  section('Layer 2 — Lv4 純屬塔升級選項（以水元素為例）');
+
+  // picks=1：條件不足（picks < 2），無選項
+  {
+    const g = makeMockGame(9999, { water: 1 });
+    const tw = { level: 4, elem: 'water', infuseElem: 'water', thirdElem: null, basicType: 'arrow', totalCost: 380 };
+    const opts = g._getMobileUpgradeOptions(tw);
+    assertEqual(opts.length, 0, 'Lv4 水水塔，picks=1：選項數 = 0（picks < 2）');
+  }
+
+  // picks=2：顯示 Lv5，不顯示 Lv6
+  {
+    const g = makeMockGame(9999, { water: 2 });
+    const tw = { level: 4, elem: 'water', infuseElem: 'water', thirdElem: null, basicType: 'arrow', totalCost: 380 };
+    const opts = g._getMobileUpgradeOptions(tw);
+    assertEqual(opts.length, 1, 'Lv4 水水塔，picks=2：選項數 = 1（只有 Lv5）');
+    assert(opts[0]?.label?.includes('Lv5'), 'Lv4 水水塔，picks=2：選項為 Lv5', opts[0]?.label);
+  }
+
+  // picks=3：仍只顯示 Lv5（picks >= 2 分支先命中，else if 不觸發）
+  {
+    const g = makeMockGame(9999, { water: 3 });
+    const tw = { level: 4, elem: 'water', infuseElem: 'water', thirdElem: null, basicType: 'arrow', totalCost: 380 };
+    const opts = g._getMobileUpgradeOptions(tw);
+    assertEqual(opts.length, 1, 'Lv4 水水塔，picks=3：選項數 = 1（只有 Lv5，不同時顯示 Lv6）');
+    assert(opts[0]?.label?.includes('Lv5'), 'Lv4 水水塔，picks=3：選項為 Lv5', opts[0]?.label);
+  }
+
+  // ── Lv5 純屬塔升級選項 ────────────────────────────────────
+  section('Layer 2 — Lv5 純屬塔升級選項（以水元素為例）');
+
+  // picks=2：未達 picks>=3，無 Lv6 選項
+  {
+    const g = makeMockGame(9999, { water: 2 });
+    const tw = { level: 5, elem: 'water', infuseElem: 'water', thirdElem: null, basicType: 'arrow', totalCost: 730 };
+    const opts = g._getMobileUpgradeOptions(tw);
+    assertEqual(opts.length, 0, 'Lv5 水水塔，picks=2：選項數 = 0（picks < 3）');
+  }
+
+  // picks=3：顯示 Lv6
+  {
+    const g = makeMockGame(9999, { water: 3 });
+    const tw = { level: 5, elem: 'water', infuseElem: 'water', thirdElem: null, basicType: 'arrow', totalCost: 730 };
+    const opts = g._getMobileUpgradeOptions(tw);
+    assertEqual(opts.length, 1, 'Lv5 水水塔，picks=3：選項數 = 1（Lv6）');
+    assert(opts[0]?.label?.includes('Lv6'), 'Lv5 水水塔，picks=3：選項為 Lv6', opts[0]?.label);
+  }
+
+  // Lv6 上限達滿（maxLv6Towers=1，已有 1 座 Lv6）：無選項
+  {
+    const g = makeMockGame(9999, { water: 3 });
+    g.towers.push({ level: 6 }); // 已有 1 座 Lv6
+    const tw = { level: 5, elem: 'water', infuseElem: 'water', thirdElem: null, basicType: 'arrow', totalCost: 730 };
+    const opts = g._getMobileUpgradeOptions(tw);
+    assertEqual(opts.length, 0, 'Lv5 水水塔，picks=3 但 Lv6 上限已達：選項數 = 0');
+  }
+
+  // 驗證所有 6 個純屬元素的 Lv5→Lv6 一致性
+  section('Layer 2 — 6 個純屬元素 Lv5→Lv6 選項一致性');
+  ELEM_KEYS.forEach(elem => {
+    const g = makeMockGame(9999, { [elem]: 3 });
+    const tw = { level: 5, elem, infuseElem: elem, thirdElem: null, basicType: 'arrow', totalCost: 730 };
+    const opts = g._getMobileUpgradeOptions(tw);
+    assertEqual(opts.length, 1, `Lv5 ${elem}×${elem} 塔，picks=3：選項數 = 1（Lv6）`);
+    assert(opts[0]?.label?.includes('Lv6'), `Lv5 ${elem} 純屬 Lv6 選項標籤正確`, opts[0]?.label);
+  });
+
+  // ── Lv4 混屬塔：有第三元素可選 ───────────────────────────
+  section('Layer 2 — Lv4 混屬塔升級選項');
+  {
+    // 火底水注（混屬），picks: fire=1, water=1, earth=1 → 第三元素可選 earth
+    const g = makeMockGame(9999, { fire: 1, water: 1, earth: 1 });
+    const tw = { level: 4, elem: 'fire', infuseElem: 'water', thirdElem: null, basicType: 'arrow', totalCost: 380 };
+    const opts = g._getMobileUpgradeOptions(tw);
+    assert(opts.length > 0, 'Lv4 火水混屬塔，有第三元素：有 Lv5 升級選項');
+    // earth 是可選第三元素，key = earth_fire_water，TRIPLE_TOWERS 應存在
+    const hasEarth = opts.some(o => o.label?.includes(ELEM.earth.icon));
+    assert(hasEarth, 'Lv4 火水混屬塔：選項包含 earth 第三元素');
+  }
+  {
+    // 無第三元素可選（picks 只有 fire 和 water，且已用完在 Lv4 注入）
+    const g = makeMockGame(9999, { fire: 1, water: 1 });
+    const tw = { level: 4, elem: 'fire', infuseElem: 'water', thirdElem: null, basicType: 'arrow', totalCost: 380 };
+    const opts = g._getMobileUpgradeOptions(tw);
+    assertEqual(opts.length, 0, 'Lv4 火水混屬塔，無第三元素 picks：選項數 = 0');
+  }
+
+  // ── 升級扣金（模擬 showTowerActionPopup onclick）────────────
+  section('Layer 2 — 升級扣金（模擬 showTowerActionPopup onclick）');
+
+  // Lv1 → Lv2
+  {
+    const cost = BASIC_TOWERS.arrow.levels[1].cost;
+    const g = makeMockGame(500);
+    const tw = { level: 1, elem: null, infuseElem: null, basicType: 'arrow', totalCost: 50 };
+    const goldBefore = g.gold;
+    const { opts } = simulateUpgradeClick(g, tw);
+    assert(opts.length === 1, 'Lv1 箭塔有 1 個升級選項');
+    assertEqual(g.gold, goldBefore - cost, `Lv1→Lv2 升級後金幣減少 ${cost}（${goldBefore} → ${goldBefore - cost}）`);
+    assertEqual(tw.level, 2, 'Lv1→Lv2：tower.level = 2');
+  }
+
+  // Lv2 → Lv3（選 fire 元素）
+  {
+    const g = makeMockGame(9999, { fire: 1 });
+    const tw = { level: 2, elem: null, infuseElem: null, basicType: 'arrow', totalCost: 130 };
+    const cost = ELEM_BASE.fire.arrow.cost;
+    const goldBefore = g.gold;
+    const { opts } = simulateUpgradeClick(g, tw);
+    assert(opts.length >= 1, 'Lv2 箭塔（fire pick）有升級選項');
+    assertEqual(g.gold, goldBefore - cost, `Lv2→Lv3 升級後金幣減少 ${cost}`);
+    assertEqual(tw.level, 3, 'Lv2→Lv3：tower.level = 3');
+    assertEqual(tw.elem, 'fire', 'Lv2→Lv3：tower.elem = fire');
+  }
+
+  // Lv4 → Lv5（水水純屬，picks=2）
+  {
+    const g = makeMockGame(9999, { water: 2 });
+    const nd5 = PURE_TOWERS.water.lv5;
+    const tw = { level: 4, elem: 'water', infuseElem: 'water', thirdElem: null, basicType: 'arrow', totalCost: 380 };
+    const goldBefore = g.gold;
+    simulateUpgradeClick(g, tw);
+    assertEqual(g.gold, goldBefore - nd5.cost, `Lv4→Lv5 純水升級後金幣減少 ${nd5.cost}`);
+    assertEqual(tw.level, 5, 'Lv4→Lv5：tower.level = 5');
+  }
+
+  // Lv5 → Lv6（水水純屬，picks=3）
+  {
+    const g = makeMockGame(9999, { water: 3 });
+    const nd6 = PURE_TOWERS.water.lv6;
+    const tw = { level: 5, elem: 'water', infuseElem: 'water', thirdElem: null, basicType: 'arrow', totalCost: 730 };
+    const goldBefore = g.gold;
+    simulateUpgradeClick(g, tw);
+    assertEqual(g.gold, goldBefore - nd6.cost, `Lv5→Lv6 純水升級後金幣減少 ${nd6.cost}`);
+    assertEqual(tw.level, 6, 'Lv5→Lv6：tower.level = 6');
+    assertEqual(tw.thirdElem, 'water', 'Lv5→Lv6：tower.thirdElem = water');
+  }
+
+  // 金幣不足：不執行升級
+  {
+    const g = makeMockGame(10); // 金幣不足
+    const tw = { level: 1, elem: null, infuseElem: null, basicType: 'arrow', totalCost: 50 };
+    const goldBefore = g.gold;
+    simulateUpgradeClick(g, tw);
+    assertEqual(tw.level, 1, '金幣不足時 tower.level 不變');
+    assertEqual(g.gold, goldBefore, '金幣不足時 gold 不扣除');
+  }
+}
+
+// ============================================================
+// Layer 3：送兵 sendAction + buildHUD spy
+// ============================================================
+
+// ── 模擬 sendAction 閉包邏輯 ─────────────────────────────
+// 與 game.js buildHUD 內的 sendAction 一致（同步版本：2026-05-13）
+// ⚠️ 若修改 game.js sendAction，需同步更新此函數
+function simulateSendAction(game, send, wave) {
+  const nextWave = wave + 1;
+  const curUsed = game.sendUsed[send.id] || 0;
+  const curQuota = getSendQuota(send.id, nextWave);
+  if (game.gold < send.cost || curUsed >= curQuota) return false;
+  game.gold -= send.cost;
+  game.income += send.income;
+  game.sendUsed[send.id] = curUsed + 1;
+  game.playerSendQueue.push({ ...send, sendId: `${send.id}_${Date.now()}` });
+  game.rebuildSidebar();
+  game.buildHUD();
+  return true;
+}
+
+function runLayer3Tests() {
+
+  // ── 送兵基本扣金與狀態更新 ────────────────────────────────
+  section('Layer 3 — sendAction：扣金、income、sendUsed');
+
+  const scout    = INCOME_SENDS.find(s => s.id === 'scout');
+  const warrior  = INCOME_SENDS.find(s => s.id === 'warrior');
+  const champion = INCOME_SENDS.find(s => s.id === 'champion');
+
+  // 成功：足夠金幣 + 配額未滿
+  {
+    const g = { gold: 500, income: 50, sendUsed: {}, playerSendQueue: [],
+                rebuildSidebar() {}, buildHUD() {} };
+    const goldBefore   = g.gold;
+    const incomeBefore = g.income;
+    const result = simulateSendAction(g, scout, 1); // W1，nextWave=2，tier=0，scout quota=6
+    assert(result === true,               'sendAction 斥候 W1：成功執行');
+    assertEqual(g.gold,   goldBefore - scout.cost,     `sendAction 後 gold 減少 ${scout.cost}`);
+    assertEqual(g.income, incomeBefore + scout.income, `sendAction 後 income 增加 ${scout.income}`);
+    assertEqual(g.sendUsed['scout'], 1,                'sendAction 後 sendUsed[scout] = 1');
+    assertEqual(g.playerSendQueue.length, 1,           'sendAction 後 playerSendQueue 新增 1 筆');
+  }
+
+  // 金幣不足：不執行
+  {
+    const g = { gold: 5, income: 50, sendUsed: {}, playerSendQueue: {},
+                rebuildSidebar() {}, buildHUD() {} };
+    const result = simulateSendAction(g, scout, 1);
+    assert(result === false,  'sendAction 金幣不足：回傳 false');
+    assertEqual(g.gold, 5,   '金幣不足時 gold 不變');
+    assertEqual(g.income, 50,'金幣不足時 income 不變');
+  }
+
+  // 配額已滿：不執行
+  {
+    const quota = getSendQuota('scout', 2); // W1 nextWave=2
+    const g = { gold: 9999, income: 50, sendUsed: { scout: quota }, playerSendQueue: [],
+                rebuildSidebar() {}, buildHUD() {} };
+    const result = simulateSendAction(g, scout, 1);
+    assert(result === false,           'sendAction 配額已滿：回傳 false');
+    assertEqual(g.sendUsed['scout'], quota, '配額已滿時 sendUsed 不再增加');
+  }
+
+  // champion W1：quota=0，永遠拒絕
+  {
+    const g = { gold: 9999, income: 50, sendUsed: {}, playerSendQueue: [],
+                rebuildSidebar() {}, buildHUD() {} };
+    const result = simulateSendAction(g, champion, 1);
+    assert(result === false, 'champion W1（quota=0）：sendAction 回傳 false');
+  }
+
+  // 連送多次直到配額耗盡
+  {
+    const g = { gold: 9999, income: 50, sendUsed: {}, playerSendQueue: [],
+                rebuildSidebar() {}, buildHUD() {} };
+    const quota = getSendQuota('warrior', 4); // W3，nextWave=4，tier=1，warrior=2
+    let count = 0;
+    while (simulateSendAction(g, warrior, 3)) count++;
+    assertEqual(count, quota, `連送戰士 W3 直到配額耗盡：共送 ${quota} 次`);
+    const extra = simulateSendAction(g, warrior, 3);
+    assert(extra === false, '超出配額後 sendAction 回傳 false');
+  }
+
+  // ── buildHUD spy ─────────────────────────────────────────
+  section('Layer 3 — sendAction 後 buildHUD() 被呼叫');
+  {
+    let buildHUDCalls = 0;
+    let rebuildSidebarCalls = 0;
+    const g = {
+      gold: 500, income: 50, sendUsed: {}, playerSendQueue: [],
+      rebuildSidebar() { rebuildSidebarCalls++; },
+      buildHUD()       { buildHUDCalls++; },
+    };
+    simulateSendAction(g, scout, 1);
+    assertEqual(buildHUDCalls,       1, 'sendAction 後 buildHUD() 被呼叫 1 次');
+    assertEqual(rebuildSidebarCalls, 1, 'sendAction 後 rebuildSidebar() 被呼叫 1 次');
+  }
+
+  // buildHUD 不在失敗時呼叫
+  {
+    let buildHUDCalls = 0;
+    const g = {
+      gold: 0, income: 50, sendUsed: {}, playerSendQueue: [],
+      rebuildSidebar() {}, buildHUD() { buildHUDCalls++; },
+    };
+    simulateSendAction(g, scout, 1);
+    assertEqual(buildHUDCalls, 0, '金幣不足時 buildHUD() 不被呼叫');
+  }
+
+  // ── 多次送兵後 sendUsed 累計正確 ──────────────────────────
+  section('Layer 3 — 多次 sendAction 後狀態累計');
+  {
+    const g = { gold: 9999, income: 50, sendUsed: {}, playerSendQueue: [],
+                rebuildSidebar() {}, buildHUD() {} };
+    simulateSendAction(g, scout, 1);
+    simulateSendAction(g, scout, 1);
+    simulateSendAction(g, warrior, 3);
+    assertEqual(g.sendUsed['scout'],   2, 'scout sendUsed = 2（送了兩次）');
+    assertEqual(g.sendUsed['warrior'], 1, 'warrior sendUsed = 1（送了一次）');
+    const totalGoldSpent = scout.cost * 2 + warrior.cost;
+    assertEqual(g.gold, 9999 - totalGoldSpent, `總扣金正確：9999 - ${totalGoldSpent}`);
+  }
+
+}
+
+// ── 執行並顯示結果 ────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const start = performance.now();
+  try {
+    runTests();
+    runLayer2Tests();
+    runLayer3Tests();
+  } catch (e) {
+    failed++;
+    resultsEl.innerHTML += `<div class="fail">❌ 測試執行錯誤：${e.message}</div>`;
+  }
+  const elapsed = (performance.now() - start).toFixed(1);
+
+  const total = passed + failed;
+  const summaryEl = document.getElementById('summary');
+  summaryEl.className = failed > 0 ? 'summary-fail' : 'summary-pass';
+  summaryEl.innerHTML = failed > 0
+    ? `❌ ${passed} / ${total} 通過 — <strong>${failed} 失敗</strong>`
+    : `✅ 全部通過 ${passed} / ${total}`;
+
+  document.getElementById('meta').textContent = `執行時間：${elapsed} ms`;
+});
+</script>
+</body>
+</html>

@@ -1,21 +1,20 @@
 session: 2026-05-13
-resume_trigger: "繼續塔防 build 修復"
+resume_trigger: "繼續塔防測試工具"
 project: tower-defense-prototype
 
 completed:
-  - build-inline-verify: build.html 兩段式 inline（Pass1 正規化 ?v=N → Pass2 精確比對 + abort + 殘留掃描）
-  - remove-version-query: index.html 移除 game.js?v=4
-  - build-script-escape: build.html 第107/122行 </script> 逸脫修正
-  - remove-wave-start-ui: 移除 #wave-fab、#mobile-hud-ready、canvas tap startWave 備援、buildHUD FAB/ready 區塊
+  - autotest-rules/step1: 建立 test.html，Layer 1 資料完整性測試（CONFIG/INFUSIONS/PURE_TOWERS/WAVES/INCOME_SENDS/getSendQuota）
+  - autotest-rules/step2: Layer 2 Mock Game 升級選項邏輯測試 + 升級扣金模擬
+  - autotest-rules/step3: Layer 3 sendAction 扣金/配額/buildHUD spy
 
 current_state:
-  build_html: 兩段式 inline，正常產出 ~281KB game.html
-  index_html: game.js 無版本號，mobile HUD 只保留送兵 #mobile-hud-sends
-  game_js: buildHUD 只在 pre_wave 顯示，無 wave-start 觸發路徑
-  wave_start: 唯一入口為側邊欄 #start-wave-btn
+  test_html: 三層自動測試，打開即執行，< 1 秒完成
+  game_js: 手機升級扣金正常，HUD 金幣於送兵/升級後更新，送兵按鈕顯示 remaining/quota
+  mobile_upgrade: Lv4 pure 只顯示 Lv5；Lv5 pure picks≥3 顯示 Lv6
+  build_html: 兩段式 inline，正常產出 game.html
 
 next:
-  - 瀏覽器測試：build.html 產出 game.html、手機點格蓋塔驗證
+  - 瀏覽器測試：test.html 開啟驗證、手機升級扣金 + Lv6 升級流程
   - plans/active/mobile-ux-redesign/（手機 UX 整體重設計）
   - plans/active/pvp-join-name-fix/
   - plans/active/elem-vs-class-design/（PVP 後決定）

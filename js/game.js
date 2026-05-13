@@ -554,6 +554,34 @@ class Game {
     for (let x = 3; x < cols - 2; x++) this.aiPath.push({x, y: aiStartRow + 6});
     for (let y = aiStartRow+7; y <= aiStartRow+9; y++) this.aiPath.push({x: cols-3, y});
     for (let x = cols-4; x >= 0; x--) this.aiPath.push({x, y: aiStartRow + 9});
+
+    if (window.matchMedia('(max-width: 768px), (max-height: 430px) and (orientation: landscape)').matches) {
+      // 先顯示 debug overlay，確保後續所有 _dbg() 都能記錄
+      const dbg = document.getElementById('mobile-debug');
+      const tog = document.getElementById('mobile-debug-toggle');
+      if (dbg) dbg.style.display = 'block';
+      if (tog) {
+        tog.style.display = 'block';
+        tog.onclick = () => { dbg.style.display = dbg.style.display === 'none' ? 'block' : 'none'; };
+      }
+      window.onerror = (msg, src, line) => { this._dbg(`ERR:${msg}(${src}:${line})`); return false; };
+
+      const hud = document.getElementById('mobile-hud');
+      if (hud) hud.style.display = 'flex';
+      document.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 1) e.preventDefault();
+      }, { passive: false });
+      let _lastTapTime = 0;
+      document.addEventListener('touchend', (e) => {
+        const now = Date.now();
+        if (now - _lastTapTime < 200) e.preventDefault();
+        _lastTapTime = now;
+      }, { passive: false });
+      const setVh = () => document.documentElement.style.setProperty('--real-vh', window.innerHeight + 'px');
+      setVh();
+      window.addEventListener('resize', setVh);
+      this._dbg(`initGrid done w=${window.innerWidth} h=${window.innerHeight}`);
+    }
   }
 
   resizeCanvas() {
@@ -1091,6 +1119,247 @@ class Game {
     opts.appendChild(sellBtn);
 
     // special-tip 點擊已由 panel 事件委派處理（見上方）
+    this.buildMobileHud();
+  }
+
+  // ── 手機底部 HUD ──
+  buildMobileHud() {
+    const hud = document.getElementById('mobile-hud');
+    const _mq = window.matchMedia('(max-width: 768px), (max-height: 430px) and (orientation: landscape)').matches;
+    this._dbg(`buildHUD state=${this.state} mq=${_mq} hud=${!!hud}`);
+    if (!hud || !_mq) return;
+
+    if (this.state !== 'pre_wave') {
+      hud.style.display = 'none';
+      return;
+    }
+    const wasHidden = hud.style.display !== 'flex';
+    hud.style.display = 'flex';
+    if (wasHidden) setTimeout(() => this.resizeCanvas(), 0);
+
+    const sendsDiv = document.getElementById('mobile-hud-sends');
+
+    // ── 送兵模式 ──
+    {
+      sendsDiv.style.display = 'flex';
+      sendsDiv.innerHTML = '';
+
+      const goldEl = document.createElement('span');
+      goldEl.className = 'mobile-hud-gold';
+      goldEl.textContent = `💰${this.gold}`;
+      sendsDiv.appendChild(goldEl);
+
+      const nextWave = this.wave + 1;
+      for (const s of INCOME_SENDS) {
+        const quota = getSendQuota(s.id, nextWave);
+        const used = this.sendUsed[s.id] || 0;
+        const remaining = quota - used;
+        if (quota === 0) continue;
+
+        const btn = document.createElement('button');
+        btn.className = 'mobile-hud-send-btn' + (this.gold < s.cost ? ' cannot-afford' : '');
+        btn.disabled = remaining <= 0;
+        btn.innerHTML = `${s.icon}<br><span style="font-size:10px;">${s.cost}g</span>`;
+        if (used > 0) {
+          const badge = document.createElement('span');
+          badge.style.cssText = 'position:absolute;top:-4px;right:-4px;background:#e94560;color:#fff;border-radius:50%;width:14px;height:14px;font-size:9px;display:flex;align-items:center;justify-content:center;pointer-events:none;';
+          badge.textContent = used;
+          btn.appendChild(badge);
+        }
+        const sendAction = () => {
+          const curUsed = this.sendUsed[s.id] || 0;
+          const curQuota = getSendQuota(s.id, nextWave);
+          if (this.gold < s.cost || curUsed >= curQuota) return;
+          this.gold -= s.cost;
+          this.income += s.income;
+          this.sendUsed[s.id] = curUsed + 1;
+          this.playerSendQueue.push({ ...s, sendId: `${s.id}_${Date.now()}` });
+          this.rebuildSidebar();
+        };
+        btn.onclick = null;
+        if (btn._touchHandler) btn.removeEventListener('touchstart', btn._touchHandler);
+        btn._touchHandler = (e) => { e.preventDefault(); sendAction(); };
+        btn.addEventListener('touchstart', btn._touchHandler, { passive: false });
+        sendsDiv.appendChild(btn);
+      }
+    }
+
+  }
+
+  _getMobileUpgradeOptions(tw) {
+    const opts = [];
+    const isBasic = !tw.elem;
+    const lv = tw.level;
+
+    if (lv === 1 && isBasic) {
+      const bDef = BASIC_TOWERS[tw.basicType || 'arrow'];
+      const nextData = bDef.levels[1];
+      opts.push({ label: '⬆️Lv2', cost: nextData.cost, action: () => {
+        tw.level = 2; tw.totalCost = (tw.totalCost || 0) + nextData.cost;
+        Object.assign(tw, { damage: nextData.damage, atkSpd: nextData.atkSpd, range: nextData.range, aoe: nextData.aoe, skills: nextData.skills || [] });
+        if (nextData.dmgType !== undefined) tw.dmgType = nextData.dmgType || null;
+        if (this.mode === 'pvp') this.netSend({ type: 'towerUpgraded', x: tw.x, y: tw.y, level: 2, basicType: tw.basicType });
+      }});
+    } else if (lv === 2 && isBasic) {
+      const avail = this.getAvailableElements();
+      for (const elem of avail) {
+        const basicType = tw.basicType || 'arrow';
+        const eb = ELEM_BASE[elem] && ELEM_BASE[elem][basicType];
+        if (!eb) continue;
+        const e = elem; // capture for closure
+        opts.push({ label: `${ELEM[e].icon}Lv3`, cost: eb.cost, action: () => {
+          tw.level = 3; tw.elem = e; tw.infuseElem = null;
+          tw.totalCost = (tw.totalCost || 0) + eb.cost;
+          Object.assign(tw, { damage: eb.damage, atkSpd: eb.atkSpd, range: eb.range, aoe: eb.aoe, skills: eb.skills || [] });
+          if (eb.dmgType !== undefined) tw.dmgType = eb.dmgType || null;
+          if (this.mode === 'pvp') this.netSend({ type: 'towerUpgraded', x: tw.x, y: tw.y, level: 3, elem: e, basicType: tw.basicType });
+        }});
+      }
+    } else if (lv === 3 && tw.elem && !tw.infuseElem) {
+      const availInjects = this.getAvailableInjects(tw.elem);
+      for (const injElem of availInjects) {
+        const inf = INFUSIONS[tw.elem] && INFUSIONS[tw.elem][injElem];
+        if (!inf) continue;
+        const lvData = inf.lv4;
+        const ie = injElem; // capture
+        const pureTag = tw.elem === injElem ? '✨' : '';
+        opts.push({ label: `${ELEM[ie].icon}${pureTag}注入`, cost: lvData.cost, action: () => {
+          tw.level = 4; tw.infuseElem = ie;
+          tw.totalCost = (tw.totalCost || 0) + lvData.cost;
+          Object.assign(tw, { damage: lvData.damage, atkSpd: lvData.atkSpd, range: lvData.range, aoe: lvData.aoe, skills: lvData.skills || [] });
+          if (lvData.dmgType !== undefined) tw.dmgType = lvData.dmgType || null;
+          if (this.mode === 'pvp') this.netSend({ type: 'towerUpgraded', x: tw.x, y: tw.y, level: 4, elem: tw.elem, infuseElem: ie });
+        }});
+      }
+    } else if (lv === 4 && tw.infuseElem) {
+      if (tw.infuseElem === tw.elem && PURE_TOWERS[tw.elem]) {
+        const pure = PURE_TOWERS[tw.elem];
+        const picks = this.elemPicks[tw.elem] || 0;
+        const lv6Count = this.countLv6Towers();
+        const maxLv6 = CONFIG.maxLv6Towers || 1;
+        if (pure.lv5 && picks >= 2) {
+          const nd5 = pure.lv5;
+          opts.push({ label: `${ELEM[tw.elem].icon}×2 Lv5`, cost: nd5.cost, action: () => {
+            tw.level = 5; tw.totalCost = (tw.totalCost || 0) + nd5.cost;
+            Object.assign(tw, { damage: nd5.damage, atkSpd: nd5.atkSpd, range: nd5.range, aoe: nd5.aoe, skills: nd5.skills || [] });
+            if (nd5.dmgType !== undefined) tw.dmgType = nd5.dmgType || null;
+            if (this.mode === 'pvp') this.netSend({ type: 'towerUpgraded', x: tw.x, y: tw.y, level: 5, elem: tw.elem, infuseElem: tw.infuseElem, thirdElem: null });
+          }});
+        }
+        if (pure.lv6 && picks >= 3 && lv6Count < maxLv6) {
+          const nd6 = pure.lv6;
+          opts.push({ label: `${ELEM[tw.elem].icon}×3 Lv6`, cost: nd6.cost, action: () => {
+            if (this.countLv6Towers() >= maxLv6) return;
+            tw.level = 6; tw.thirdElem = tw.elem;
+            tw.totalCost = (tw.totalCost || 0) + nd6.cost;
+            Object.assign(tw, { damage: nd6.damage, atkSpd: nd6.atkSpd, range: nd6.range, aoe: nd6.aoe, skills: nd6.skills || [] });
+            if (nd6.dmgType !== undefined) tw.dmgType = nd6.dmgType || null;
+            if (this.mode === 'pvp') this.netSend({ type: 'towerUpgraded', x: tw.x, y: tw.y, level: 6, elem: tw.elem, infuseElem: tw.infuseElem, thirdElem: tw.elem });
+          }});
+        }
+      } else {
+        const avail3rd = this.getAvailableThirdElems(tw.elem, tw.infuseElem);
+        for (const e3 of avail3rd) {
+          const key = this.getTripleKey(tw.elem, tw.infuseElem, e3);
+          const triple = TRIPLE_TOWERS[key];
+          if (!triple) continue;
+          const nd = triple.lv5;
+          const te = e3; // capture
+          opts.push({ label: `${ELEM[te].icon}Lv5`, cost: nd.cost, action: () => {
+            tw.level = 5; tw.thirdElem = te;
+            tw.totalCost = (tw.totalCost || 0) + nd.cost;
+            Object.assign(tw, { damage: nd.damage, atkSpd: nd.atkSpd, range: nd.range, aoe: nd.aoe, skills: nd.skills || [] });
+            if (nd.dmgType !== undefined) tw.dmgType = nd.dmgType || null;
+            if (this.mode === 'pvp') this.netSend({ type: 'towerUpgraded', x: tw.x, y: tw.y, level: 5, elem: tw.elem, infuseElem: tw.infuseElem, thirdElem: te });
+          }});
+        }
+      }
+    }
+    return opts;
+  }
+
+  _getSellValue(tw) {
+    const sellRate = (tw.level <= 3 || this.randomMode) ? 1.0 : 0.8;
+    return Math.floor((tw.totalCost || CONFIG.towerCost) * sellRate);
+  }
+
+  showTowerActionPopup(tw) {
+    if (!window.matchMedia('(max-width: 768px), (max-height: 430px) and (orientation: landscape)').matches) return;
+    const popup = document.getElementById('tower-action-popup');
+    const btns = document.getElementById('tower-action-btns');
+    if (!popup || !btns) return;
+
+    const cs = this.cellSize;
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const wrapRect = document.getElementById('canvas-wrap').getBoundingClientRect();
+    const towerCssX = (this.offsetX + tw.x * cs + cs / 2) + (canvasRect.left - wrapRect.left);
+    const towerCssY = (this.offsetY + tw.y * cs + cs / 2) + (canvasRect.top - wrapRect.top);
+
+    btns.innerHTML = '';
+
+    const label = document.createElement('div');
+    label.className = 'tower-popup-label';
+    label.textContent = `${tw.icon || '🏰'} Lv${tw.level} ${tw.name || ''}`;
+    btns.appendChild(label);
+
+    const upgrades = this._getMobileUpgradeOptions(tw);
+    for (const upg of upgrades) {
+      const btn = document.createElement('button');
+      btn.className = 'tower-popup-btn' + (this.gold < upg.cost ? ' cannot-afford' : '');
+      btn.textContent = `${upg.label}　💰${upg.cost}g`;
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        if (this.gold < upg.cost) return;
+        upg.action();
+        this.rebuildSidebar();
+        if (this.selectedTower) this.showTowerActionPopup(this.selectedTower);
+        else this.hideTowerActionPopup();
+      };
+      btns.appendChild(btn);
+    }
+    if (upgrades.length === 0) {
+      const maxLabel = document.createElement('div');
+      maxLabel.className = 'tower-popup-label';
+      maxLabel.textContent = '已達最高等級';
+      btns.appendChild(maxLabel);
+    }
+
+    const sellVal = this._getSellValue(tw);
+    const sellBtn = document.createElement('button');
+    sellBtn.className = 'tower-popup-btn sell';
+    sellBtn.textContent = `🗑️ 賣出　+${sellVal}g`;
+    sellBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.hideTowerActionPopup();
+      this.sellTower(tw);
+    };
+    btns.appendChild(sellBtn);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'tower-popup-btn close-btn';
+    closeBtn.textContent = '✕';
+    closeBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.selectedTower = null;
+      this.hideTowerActionPopup();
+      this.rebuildSidebar();
+    };
+    btns.appendChild(closeBtn);
+
+    popup.style.display = 'flex';
+    const popupHeight = popup.offsetHeight || 200;
+    const wrapHeight = document.getElementById('canvas-wrap').clientHeight;
+    let top = towerCssY + cs * 0.6;
+    if (top + popupHeight > wrapHeight - 60) top = towerCssY - popupHeight - cs * 0.2;
+    let left = towerCssX - 80;
+    left = Math.max(4, Math.min(left, document.getElementById('canvas-wrap').clientWidth - 268));
+    popup.style.top = top + 'px';
+    popup.style.left = left + 'px';
+  }
+
+  hideTowerActionPopup() {
+    const popup = document.getElementById('tower-action-popup');
+    if (popup) popup.style.display = 'none';
   }
 
   // 精華里程碑檢查（總精華達到門檻時觸發送兵 HP 加成）
@@ -1350,6 +1619,8 @@ class Game {
       : '';
     title.innerHTML = `🔮 W${this.wave} 過關 — 選擇元素${bossHint}`;
 
+    const mobileHud = document.getElementById('mobile-hud');
+    if (mobileHud) mobileHud.style.display = 'none';
     overlay.style.display = 'flex';
     cardsDiv.innerHTML = '';
 
@@ -1596,6 +1867,7 @@ class Game {
 
   // ── Start wave ──
   startWave() {
+    this._dbg(`startWave wave=${this.wave} state=${this.state}`);
     this.wave++;
     if (this.wave > CONFIG.totalWaves) { this.endGame(true, 'survived'); return; }
 
@@ -1608,6 +1880,7 @@ class Game {
 
     // income 不在這裡收！改到 wave clear 後才收（叫兵的 income 是投資，要打完一波才回收）
     this.state = 'spawning';
+    this._dbg(`→spawning spawnQ=${this.spawnQueue.length}`);
 
     // 重置送兵計數
     this.sendUsed = {}; // per-type send count, reset each wave
@@ -1935,54 +2208,79 @@ class Game {
     return { gx: Math.floor((mx - this.offsetX) / this.cellSize), gy: Math.floor((my - this.offsetY) / this.cellSize) };
   }
 
-  setupEvents() {
-    this.canvas.addEventListener('click', (e) => {
-      // 關閉塔類型選擇 popup（如果有）
-      this.closeTowerSelectPopup();
-      this.hideEnemyTooltip();
+  _dbg(msg) {
+    const el = document.getElementById('mobile-debug');
+    if (!el || el.style.display === 'none') return;
+    const line = document.createElement('div');
+    line.textContent = `${new Date().toISOString().slice(11,22)} ${msg}`;
+    el.appendChild(line);
+    while (el.children.length > 20) el.removeChild(el.firstChild);
+    el.scrollTop = el.scrollHeight;
+  }
 
-      // 先檢查是否點到敵人
-      const clickedEnemy = this.findEnemyAtClick(e);
-      if (clickedEnemy) {
-        this.showEnemyTooltip(clickedEnemy, e);
-        this.pendingPlace = null;
-        return;
-      }
+  _handleCanvasAction(pos) {
+    this.closeTowerSelectPopup();
+    this.hideEnemyTooltip();
 
-      const { gx, gy } = this.toGrid(e);
-      if (gx < 0 || gx >= CONFIG.gridCols || gy < 0 || gy >= CONFIG.gridRows) return;
-
-      // 放塔（空格）— 第一次點擊預覽，第二次確認蓋塔
-      if (this.grid[gy][gx] === 0) {
-        if (this.pendingPlace && this.pendingPlace.x === gx && this.pendingPlace.y === gy) {
-          // 第二次點擊：確認蓋塔
-          this.placeTower(gx, gy);
-          this.pendingPlace = null;
-        } else {
-          // 第一次點擊：標記預覽位置
-          this.pendingPlace = { x: gx, y: gy };
-          this.selectedTower = null;
-          this.rebuildSidebar();
-        }
-        return;
-      }
-
-      // 選取已有的塔
-      if (this.grid[gy][gx] === 2) {
-        const t = this.towers.find(t => t.x === gx && t.y === gy);
-        if (t) {
-          this.selectedTower = (this.selectedTower === t) ? null : t;
-          this.pendingPlace = null;
-          this.rebuildSidebar();
-        }
-        return;
-      }
-
-      // 取消選取
-      this.selectedTower = null;
+    // 先檢查是否點到敵人
+    const clickedEnemy = this.findEnemyAtClick(pos);
+    if (clickedEnemy) {
+      this.showEnemyTooltip(clickedEnemy, pos);
       this.pendingPlace = null;
-      this.rebuildSidebar();
-    });
+      return;
+    }
+
+    const { gx, gy } = this.toGrid(pos);
+    if (gx < 0 || gx >= CONFIG.gridCols || gy < 0 || gy >= CONFIG.gridRows) return;
+
+    // 放塔（空格）— 第一次點擊預覽，第二次確認蓋塔
+    if (this.grid[gy][gx] === 0) {
+      if (this.pendingPlace && this.pendingPlace.x === gx && this.pendingPlace.y === gy) {
+        this.placeTower(gx, gy);
+        this.pendingPlace = null;
+      } else {
+        this.pendingPlace = { x: gx, y: gy };
+        this.selectedTower = null;
+        this.rebuildSidebar();
+      }
+      return;
+    }
+
+    // 選取已有的塔
+    if (this.grid[gy][gx] === 2) {
+      const t = this.towers.find(t => t.x === gx && t.y === gy);
+      if (t) {
+        if (this.selectedTower === t) {
+          this.selectedTower = null;
+          this.hideTowerActionPopup();
+          this.rebuildSidebar();
+        } else {
+          this.selectedTower = t;
+          this.pendingPlace = null;
+          this.rebuildSidebar();
+          this.showTowerActionPopup(t);
+        }
+      }
+      return;
+    }
+
+    // 取消選取
+    this.selectedTower = null;
+    this.pendingPlace = null;
+    this.hideTowerActionPopup();
+    this.rebuildSidebar();
+  }
+
+  setupEvents() {
+    this.canvas.addEventListener('click', (e) => { this._handleCanvasAction(e); });
+
+    // 手機：touchstart 接管所有 canvas 互動（阻止縮放，不依賴 click 合成）
+    this.canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (!e.touches.length) return;
+      const t = e.touches[0];
+      this._handleCanvasAction({ clientX: t.clientX, clientY: t.clientY });
+    }, { passive: false });
 
     this.canvas.addEventListener('mousemove', (e) => { this.hoveredCell = this.toGrid(e); });
 
@@ -3934,7 +4232,7 @@ function initStart() {
       hostConn = pvpPeer.connect('td6-' + code);
       hostConn.on('open', () => {
         // 告知 Host 我加入了
-        hostConn.send({ type: 'lobbyJoin', name: getMyName() |initGrid| id.slice(-4) });
+        hostConn.send({ type: 'lobbyJoin', name: getMyName() });
         status.innerHTML = `<span style="color:#4ecdc4;">已連線！等待 Host 開始...</span>`;
       });
       hostConn.on('data', (data) => {

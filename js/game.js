@@ -1159,7 +1159,7 @@ class Game {
         const btn = document.createElement('button');
         btn.className = 'mobile-hud-send-btn' + (this.gold < s.cost ? ' cannot-afford' : '');
         btn.disabled = remaining <= 0;
-        btn.innerHTML = `${s.icon}<br><span style="font-size:10px;">${s.cost}g</span>`;
+        btn.innerHTML = `${s.icon}<br><span style="font-size:10px;">${s.cost}g</span><br><span style="font-size:9px;color:#aaa;">${remaining}/${quota}</span>`;
         if (used > 0) {
           const badge = document.createElement('span');
           badge.style.cssText = 'position:absolute;top:-4px;right:-4px;background:#e94560;color:#fff;border-radius:50%;width:14px;height:14px;font-size:9px;display:flex;align-items:center;justify-content:center;pointer-events:none;';
@@ -1175,6 +1175,7 @@ class Game {
           this.sendUsed[s.id] = curUsed + 1;
           this.playerSendQueue.push({ ...s, sendId: `${s.id}_${Date.now()}` });
           this.rebuildSidebar();
+          this.buildHUD();
         };
         btn.onclick = null;
         if (btn._touchHandler) btn.removeEventListener('touchstart', btn._touchHandler);
@@ -1245,8 +1246,7 @@ class Game {
             if (nd5.dmgType !== undefined) tw.dmgType = nd5.dmgType || null;
             if (this.mode === 'pvp') this.netSend({ type: 'towerUpgraded', x: tw.x, y: tw.y, level: 5, elem: tw.elem, infuseElem: tw.infuseElem, thirdElem: null });
           }});
-        }
-        if (pure.lv6 && picks >= 3 && lv6Count < maxLv6) {
+        } else if (pure.lv6 && picks >= 3 && lv6Count < maxLv6) {
           const nd6 = pure.lv6;
           opts.push({ label: `${ELEM[tw.elem].icon}×3 Lv6`, cost: nd6.cost, action: () => {
             if (this.countLv6Towers() >= maxLv6) return;
@@ -1273,6 +1273,22 @@ class Game {
             if (this.mode === 'pvp') this.netSend({ type: 'towerUpgraded', x: tw.x, y: tw.y, level: 5, elem: tw.elem, infuseElem: tw.infuseElem, thirdElem: te });
           }});
         }
+      }
+    } else if (lv === 5 && tw.infuseElem === tw.elem && !tw.thirdElem && PURE_TOWERS[tw.elem]) {
+      const pure = PURE_TOWERS[tw.elem];
+      const picks = this.elemPicks[tw.elem] || 0;
+      const lv6Count = this.countLv6Towers();
+      const maxLv6 = CONFIG.maxLv6Towers ?? 1;
+      if (pure.lv6 && picks >= 3 && lv6Count < maxLv6) {
+        const nd6 = pure.lv6;
+        opts.push({ label: `${ELEM[tw.elem].icon}×3 Lv6`, cost: nd6.cost, action: () => {
+          if (this.countLv6Towers() >= maxLv6) return;
+          tw.level = 6; tw.thirdElem = tw.elem;
+          tw.totalCost = (tw.totalCost || 0) + nd6.cost;
+          Object.assign(tw, { damage: nd6.damage, atkSpd: nd6.atkSpd, range: nd6.range, aoe: nd6.aoe, skills: nd6.skills || [] });
+          if (nd6.dmgType !== undefined) tw.dmgType = nd6.dmgType || null;
+          if (this.mode === 'pvp') this.netSend({ type: 'towerUpgraded', x: tw.x, y: tw.y, level: 6, elem: tw.elem, infuseElem: tw.infuseElem, thirdElem: tw.elem });
+        }});
       }
     }
     return opts;
@@ -1310,8 +1326,10 @@ class Game {
       btn.onclick = (e) => {
         e.stopPropagation();
         if (this.gold < upg.cost) return;
+        this.gold -= upg.cost;
         upg.action();
         this.rebuildSidebar();
+        this.buildHUD();
         if (this.selectedTower) this.showTowerActionPopup(this.selectedTower);
         else this.hideTowerActionPopup();
       };

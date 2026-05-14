@@ -137,8 +137,9 @@ class Game {
         break;
       case 'ready':
         if (fromId) this.readyPlayers.add(fromId);
-        this.addBattleLog('ai', `⚔️ ${senderLabel}已準備（${this.readyPlayers.size}/${this.alivePlayers.size - 1}）`);
+        this.addBattleLog('ai', `⚔️ ${senderLabel}已準備（${this.readyPlayers.size + (this.myReady ? 1 : 0)}/${this.alivePlayers.size}）`);
         if (this.myReady) this.checkAllReady();
+        if (this.state === 'pre_wave') this.showWavePreview();
         break;
       case 'sendTroop': {
         // 只處理來自 defendFromId 的送兵（對我的攻擊）
@@ -1835,9 +1836,9 @@ class Game {
     const topReadyBtn = document.getElementById('pvp-ready-topbar');
     if (startBtn) {
       if (this.mode === 'pvp') {
-        const readyCount = this.readyPlayers.size;
-        const totalOthers = this.alivePlayers.size - 1;
-        const readyText = this.myReady ? `⏳ 等待中...（${readyCount}/${totalOthers}）` : `✓ 準備 Wave ${nextIdx+1}`;
+        const readyCount = this.readyPlayers.size + (this.myReady ? 1 : 0);
+        const totalPlayers = this.alivePlayers.size;
+        const readyText = this.myReady ? `⏳ 等待中...（${readyCount}/${totalPlayers}）` : `✓ 準備 Wave ${nextIdx+1}`;
         const readyOpacity = this.myReady ? '0.5' : '1';
         startBtn.textContent = readyText;
         startBtn.style.opacity = readyOpacity;
@@ -1854,7 +1855,7 @@ class Game {
         // Topbar 準備按鈕也同步
         if (topReadyBtn) {
           topReadyBtn.style.display = this.state === 'pre_wave' ? '' : 'none';
-          topReadyBtn.textContent = this.myReady ? `⏳ ${readyCount}/${totalOthers}` : `✓ 準備 W${nextIdx+1}`;
+          topReadyBtn.textContent = this.myReady ? `⏳ ${readyCount}/${totalPlayers}` : `✓ 準備 W${nextIdx+1}`;
           topReadyBtn.style.opacity = readyOpacity;
           topReadyBtn.onclick = doReady;
         }

@@ -1,4 +1,34 @@
 // ============================================================
+// UI EDITOR HELPERS
+// ============================================================
+
+window._mobilePreview = false;
+
+function isMobileLayout() {
+  return window._mobilePreview ||
+    window.matchMedia('(max-width: 768px), (max-height: 430px) and (orientation: landscape)').matches;
+}
+
+window.toggleMobilePreview = function(enabled, width = 390) {
+  window._mobilePreview = enabled;
+  const wrap = document.getElementById('canvas-wrap');
+  const body = document.body;
+  if (enabled) {
+    body.classList.add('mobile-preview');
+    wrap.style.maxWidth = width + 'px';
+    wrap.style.margin = '0 auto';
+  } else {
+    body.classList.remove('mobile-preview');
+    wrap.style.maxWidth = '';
+    wrap.style.margin = '';
+  }
+  if (window._game) {
+    window._game.resizeCanvas();
+    if (window._game.state === 'pre_wave') window._game.showWavePreview();
+  }
+};
+
+// ============================================================
 // GAME
 // ============================================================
 
@@ -556,7 +586,7 @@ class Game {
     for (let y = aiStartRow+7; y <= aiStartRow+9; y++) this.aiPath.push({x: cols-3, y});
     for (let x = cols-4; x >= 0; x--) this.aiPath.push({x, y: aiStartRow + 9});
 
-    if (window.matchMedia('(max-width: 768px), (max-height: 430px) and (orientation: landscape)').matches) {
+    if (isMobileLayout()) {
       // 先顯示 debug overlay，確保後續所有 _dbg() 都能記錄
       const dbg = document.getElementById('mobile-debug');
       const tog = document.getElementById('mobile-debug-toggle');
@@ -1126,7 +1156,7 @@ class Game {
   // ── 手機底部 HUD ──
   buildMobileHud() {
     const hud = document.getElementById('mobile-hud');
-    const _mq = window.matchMedia('(max-width: 768px), (max-height: 430px) and (orientation: landscape)').matches;
+    const _mq = isMobileLayout();
     this._dbg(`buildHUD state=${this.state} mq=${_mq} hud=${!!hud}`);
     if (!hud || !_mq) return;
 
@@ -1301,7 +1331,7 @@ class Game {
   }
 
   showTowerActionPopup(tw) {
-    if (!window.matchMedia('(max-width: 768px), (max-height: 430px) and (orientation: landscape)').matches) return;
+    if (!isMobileLayout()) return;
     const popup = document.getElementById('tower-action-popup');
     const btns = document.getElementById('tower-action-btns');
     if (!popup || !btns) return;

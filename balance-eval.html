@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>📊 Balance Evaluator — Tower Defense</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0a1e; color:#eee; font-family:'Consolas',monospace; padding:24px; font-size:12px; }
+h1 { font-size:16px; color:#ffd93d; margin-bottom:4px; }
+.subtitle { font-size:11px; color:#555; margin-bottom:24px; }
+h2 { font-size:13px; color:#4ecdc4; margin:0; }
+details { margin-bottom:16px; border:1px solid #222; border-radius:6px; overflow:hidden; }
+summary { background:#0f0f2a; padding:10px 14px; cursor:pointer; display:flex; align-items:center; gap:8px; user-select:none; }
+summary:hover { background:#1a1a3e; }
+.section-body { padding:12px 14px; }
+table { border-collapse:collapse; width:100%; }
+th { background:#0f1f2f; color:#4ecdc4; padding:5px 8px; text-align:left; font-size:11px; border-bottom:1px solid #333; white-space:nowrap; }
+td { padding:4px 8px; border-bottom:1px solid #111; white-space:nowrap; vertical-align:top; }
+tr:hover td { background:#0f0f20; }
+.ok   { color:#4ecdc4; }
+.warn { color:#ffd93d; }
+.err  { color:#e94560; }
+.info { color:#666; }
+.boss-row td { background:#1a1500; }
+.note { font-size:10px; color:#555; margin-top:6px; }
+</style>
+</head>
+<body>
+<h1>📊 Tower Defense — Balance Evaluator</h1>
+<p class="subtitle">自動載入資料，計算波次威脅、金流、塔效率、送兵 ROI。假設：路徑通過時間 15s、AOE 平均覆蓋 2.5 目標。</p>
+
+<!-- Table A -->
+<details open>
+<summary><h2>▸ Table A　波次威脅分數（WTS）</h2></summary>
+<div class="section-body">
+<table id="tbl-wts"></table>
+<p class="note">WTS = count × (HP÷(1−armor)) × skill乘數。skill乘數：regen×1.15、armorStack×1.30、enrage×1.10、charge×1.05（疊乘）</p>
+</div>
+</details>
+
+<!-- Table B -->
+<details open>
+<summary><h2>▸ Table B　每波可用金幣（Gold Flow）</h2></summary>
+<div class="section-body">
+<table id="tbl-gf"></table>
+<p class="note">可用金幣 = 起始230g + 前波所有擊殺金 + baseIncome×波數（不扣花費，為理論上限）。🔮=元素選擇波、⭐=Boss波。</p>
+</div>
+</details>
+
+<!-- Table C -->
+<details>
+<summary><h2>▸ Table C　塔 DPS / Gold 效率（TDG）</h2></summary>
+<div class="section-body">
+<details open><summary style="background:#111;padding:6px 10px;cursor:pointer;list-style:none;">▸ Lv1–2 基礎塔</summary>
+<table id="tbl-tdg-basic"></table></details>
+<details open><summary style="background:#111;padding:6px 10px;cursor:pointer;list-style:none;">▸ Lv3 元素基底（ELEM_BASE，累積 260g）</summary>
+<table id="tbl-tdg-lv3"></table></details>
+<details><summary style="background:#111;padding:6px 10px;cursor:pointer;list-style:none;">▸ Lv4 注入塔（INFUSIONS，累積 510g）— 點開展開</summary>
+<table id="tbl-tdg-lv4"></table></details>
+<details><summary style="background:#111;padding:6px 10px;cursor:pointer;list-style:none;">▸ Lv5 三屬塔（TRIPLE，累積 910g）+ 純屬 Lv5（累積 860g）— 點開展開</summary>
+<table id="tbl-tdg-lv5"></table></details>
+<details><summary style="background:#111;padding:6px 10px;cursor:pointer;list-style:none;">▸ Lv6 純屬終極（PURE，累積 1460g）— 點開展開</summary>
+<table id="tbl-tdg-lv6"></table></details>
+<p class="note">DPS(adj) = damage × atkSpd × AOE倍率（單體×1.0、AOE×2.5）。TDG = DPS(adj) × score_adj ÷ 累積金幣。score_adj 為設計者補正係數。</p>
+</div>
+</details>
+
+<!-- Table D -->
+<details open>
+<summary><h2>▸ Table D　送兵 ROI</h2></summary>
+<div class="section-body">
+<table id="tbl-send-roi"></table>
+<p class="note">回本波數 = cost÷income。最晚送出波次 = totalWaves−回本波數（之後送就虧損）。EHP/g = (count×HP÷(1−armor))÷cost。</p>
+</div>
+</details>
+
+<!-- Table E -->
+<details open>
+<summary><h2>▸ Table E　綜合平衡比率（Balance Ratio）⬅ 核心</h2></summary>
+<div class="section-body">
+<table id="tbl-br"></table>
+<p class="note">BR = 路徑時間(15s) × TPI ÷ WTS。代表「在路徑內，最佳投資能清掉這波的幾倍」。BR&lt;0.4🔴過難、0.4–0.8🟡挑戰、0.8–2.5🟢理想、&gt;2.5⬜輕鬆。WTS△= 本波÷上波難度倍率，&gt;3急升、&lt;0.5急降。</p>
+</div>
+</details>
+
+<!-- Table F -->
+<details open>
+<summary><h2>▸ Table F　PVP 送兵威脅矩陣（PThreat）</h2></summary>
+<div class="section-body">
+<table id="tbl-pthreat"></table>
+<p class="note">PThreat = 擊殺時間 ÷ 路徑通過時間(15s)。&gt;1.0🔴對手難以在路徑內清除、0.5–1.0🟡需集中火力、&lt;0.5🟢威脅不大。假設對手單塔最佳DPS（保守估算）。</p>
+</div>
+</details>
+
+<!-- JS 資料載入 -->
+<script src="js/config.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/sends.js"></script>
+<script src="js/towers.js"></script>
+<script src="js/waves.js"></script>
+
+<script>
+// ══════════════════════════════════════════════
+// 工具函式
+// ══════════════════════════════════════════════
+function th(txt) { return `<th>${txt}</th>`; }
+function td(txt, cls) { return cls ? `<td class="${cls}">${txt}</td>` : `<td>${txt}</td>`; }
+function fmt(n, dec=0) { return Number(n).toFixed(dec); }
+
+// ══════════════════════════════════════════════
+// Table A：Wave Threat Score (WTS)
+// ══════════════════════════════════════════════
+function calcWTS(wave) {
+  const skillMult = (skills) => {
+    let m = 1;
+    if ((skills||[]).some(sk => sk.type === 'regen'))      m *= 1.15;
+    if ((skills||[]).some(sk => sk.type === 'armorStack')) m *= 1.30;
+    if ((skills||[]).some(sk => sk.type === 'enrage'))     m *= 1.10;
+    if ((skills||[]).some(sk => sk.type === 'charge'))     m *= 1.05;
+    return m;
+  };
+  const armorCap = Math.min(0.9, wave.armor || 0);
+  const ehpBase = wave.hp / Math.max(0.01, 1 - armorCap);
+  const mult = skillMult(wave.skills || []);
+  return { ehpBase, mult, wts: wave.count * ehpBase * mult };
+}
+
+function buildTableA() {
+  const tbl = document.getElementById('tbl-wts');
+  let html = '<tr>'
+    + th('W#') + th('名稱') + th('Count') + th('HP') + th('甲')
+    + th('EHP/單') + th('Skill×') + th('WTS') + th('killGold') + th('總擊殺金')
+    + th('dmgToBase') + th('Boss?') + th('Resist')
+    + '</tr>';
+
+  let cumWTS = 0;
+  WAVES.forEach((w, i) => {
+    const { ehpBase, mult, wts } = calcWTS(w);
+    cumWTS += wts;
+    const isBoss = !!w.isBoss;
+    const rowCls = isBoss ? ' class="boss-row"' : '';
+    const dmgCls = (w.dmgToBase||0) >= 5 ? 'warn' : '';
+    const bossLabel = isBoss ? '<span class="warn">⭐</span>' : '';
+    const resistStr = typeof w.resist === 'string'
+      ? `<span class="info">⚠️${w.resist}</span>`
+      : (w.resist && Object.keys(w.resist).length > 0
+          ? Object.entries(w.resist).map(([e,v]) => `${e}:${v}`).join(' ')
+          : '<span class="info">—</span>');
+    const multStr = mult === 1 ? '<span class="info">×1.00</span>'
+      : `<span class="warn">×${fmt(mult,2)}</span>`;
+    const wtsCls = wts > 5000 ? 'err' : wts > 2000 ? 'warn' : 'ok';
+    const totalKill = w.count * w.killGold;
+
+    html += `<tr${rowCls}>`
+      + td(i+1)
+      + td(`${w.icon||''} ${w.name}`)
+      + td(w.count)
+      + td(w.hp)
+      + td(fmt(w.armor||0,2))
+      + td(fmt(ehpBase,0))
+      + td(multStr)
+      + td(`<span class="${wtsCls}">${fmt(wts,0)}</span>`)
+      + td(w.killGold)
+      + td(totalKill)
+      + td(w.dmgToBase||0, dmgCls)
+      + td(bossLabel || '<span class="info">—</span>')
+      + td(resistStr)
+      + '</tr>';
+  });
+
+  tbl.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════
+// Table B：Gold Flow
+// ══════════════════════════════════════════════
+function calcGoldFlow() {
+  const rows = [];
+  let cumKill = 0;
+  const start = CONFIG.startGold;
+  const income = CONFIG.baseIncome;
+
+  for (let i = 0; i < WAVES.length; i++) {
+    const available = start + cumKill + income * i;
+    const kill = WAVES[i].count * WAVES[i].killGold;
+    rows.push({
+      wave: i + 1,
+      available,
+      delta_kill: kill,
+      cumKill,
+    });
+    cumKill += kill;
+  }
+  return rows;
+}
+
+function buildTableB() {
+  const tbl = document.getElementById('tbl-gf');
+  const rows = calcGoldFlow();
+
+  let html = '<tr>'
+    + th('W#') + th('名稱') + th('本波收入') + th('本波擊殺金') + th('累積擊殺金')
+    + th('可用金幣（上限）') + th('備注')
+    + '</tr>';
+
+  rows.forEach((r, i) => {
+    const w = WAVES[i];
+    const isElem = ELEM_WAVES.includes(i + 1);
+    const isBoss = !!w.isBoss;
+    const rowCls = isBoss ? ' class="boss-row"' : '';
+    const notes = [];
+    if (isElem)  notes.push('<span class="ok">🔮 元素選擇</span>');
+    if (isBoss)  notes.push('<span class="warn">⭐ Boss</span>');
+
+    const avCls = r.available >= 1000 ? 'ok' : r.available >= 500 ? 'warn' : '';
+
+    html += `<tr${rowCls}>`
+      + td(r.wave)
+      + td(`${w.icon||''} ${w.name}`)
+      + td(`+${CONFIG.baseIncome}g`)
+      + td(`+${r.delta_kill}g`)
+      + td(`${r.cumKill}g`)
+      + td(`<span class="${avCls}">${r.available}g</span>`)
+      + td(notes.join(' ') || '<span class="info">—</span>')
+      + '</tr>';
+  });
+
+  tbl.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════
+// Table C：Tower DPS / Gold (TDG)
+// ══════════════════════════════════════════════
+function calcTDG(damage, atkSpd, aoe, cumCost, scoreAdj) {
+  const dpsRaw = damage * atkSpd;
+  const aoeFactor = (aoe > 0) ? 2.5 : 1.0;
+  const dpsAdj = dpsRaw * aoeFactor * (scoreAdj || 1);
+  const tdg = dpsAdj / cumCost;
+  return { dpsRaw, dpsAdj, tdg };
+}
+
+function tdgHeader() {
+  return '<tr>'
+    + th('塔名') + th('元素') + th('Dmg') + th('AtkSpd') + th('AOE?')
+    + th('DPS(raw)') + th('score_adj') + th('DPS(adj)') + th('累積金') + th('TDG') + th('技能')
+    + '</tr>';
+}
+
+function tdgRow(name, elem, damage, atkSpd, aoe, cumCost, scoreAdj, skills, allTDGs) {
+  const { dpsRaw, dpsAdj, tdg } = calcTDG(damage, atkSpd, aoe, cumCost, scoreAdj);
+  const isTopTDG = tdg >= allTDGs * 0.85;
+  const tdgCls = tdg >= 0.15 ? 'ok' : tdg >= 0.08 ? '' : tdg < 0.05 ? 'err' : 'info';
+  const skillStr = (skills||[]).map(sk=>sk.type).join(' ') || '—';
+  const aoeStr = aoe > 0 ? `<span class="ok">AOE ${aoe}</span>` : '<span class="info">—</span>';
+  return '<tr>'
+    + td(name)
+    + td(elem || '—')
+    + td(damage)
+    + td(atkSpd)
+    + td(aoeStr)
+    + td(fmt(dpsRaw, 1))
+    + td(scoreAdj && scoreAdj !== 1 ? `<span class="warn">×${scoreAdj}</span>` : '×1')
+    + td(fmt(dpsAdj, 1))
+    + td(cumCost + 'g')
+    + td(`<span class="${tdgCls}">${fmt(tdg, 3)}</span>`)
+    + td(`<span class="info">${skillStr}</span>`)
+    + '</tr>';
+}
+
+function buildTableC() {
+  // ── Lv1-2 Basic ──
+  let rows = [];
+  BASIC_KEYS.forEach(key => {
+    const bt = BASIC_TOWERS[key];
+    bt.levels.forEach((lv, i) => {
+      const cumCost = i === 0 ? 50 : 130;
+      rows.push({ name: `${bt.icon} ${bt.name} Lv${i+1}`, elem: '—', cumCost, ...lv, scoreAdj: 1 });
+    });
+  });
+  rows.sort((a,b) => {
+    const ta = calcTDG(a.damage,a.atkSpd,a.aoe||0,a.cumCost,1);
+    const tb = calcTDG(b.damage,b.atkSpd,b.aoe||0,b.cumCost,1);
+    return tb.tdg - ta.tdg;
+  });
+  const maxTDGBasic = calcTDG(rows[0].damage,rows[0].atkSpd,rows[0].aoe||0,rows[0].cumCost,1).tdg;
+  let html = tdgHeader();
+  rows.forEach(r => { html += tdgRow(r.name, r.elem, r.damage, r.atkSpd, r.aoe||0, r.cumCost, 1, r.skills, maxTDGBasic); });
+  document.getElementById('tbl-tdg-basic').innerHTML = html;
+
+  // ── Lv3 ELEM_BASE ──
+  rows = [];
+  Object.entries(ELEM_BASE).forEach(([elem, bases]) => {
+    Object.entries(bases).forEach(([base, t]) => {
+      rows.push({ name: `${t.icon} ${t.name}`, elem, cumCost: 260, ...t, scoreAdj: 1 });
+    });
+  });
+  rows.sort((a,b) => {
+    const ta = calcTDG(a.damage,a.atkSpd,a.aoe||0,a.cumCost,1);
+    const tb = calcTDG(b.damage,b.atkSpd,b.aoe||0,b.cumCost,1);
+    return tb.tdg - ta.tdg;
+  });
+  const maxTDGLv3 = calcTDG(rows[0].damage,rows[0].atkSpd,rows[0].aoe||0,rows[0].cumCost,1).tdg;
+  html = tdgHeader();
+  rows.forEach(r => { html += tdgRow(r.name, r.elem, r.damage, r.atkSpd, r.aoe||0, r.cumCost, 1, r.skills, maxTDGLv3); });
+  document.getElementById('tbl-tdg-lv3').innerHTML = html;
+
+  // ── Lv4 INFUSIONS (all 36) ──
+  rows = [];
+  Object.entries(INFUSIONS).forEach(([base, infs]) => {
+    Object.entries(infs).forEach(([inf, entry]) => {
+      const lv = entry.lv4;
+      if (!lv) return;
+      rows.push({ name: `${entry.icon} ${entry.name}`, elem: `${base}+${inf}`, cumCost: 510, ...lv, scoreAdj: lv.score_adj || 1 });
+    });
+  });
+  rows.sort((a,b) => {
+    const ta = calcTDG(a.damage,a.atkSpd,a.aoe||0,a.cumCost,a.scoreAdj);
+    const tb = calcTDG(b.damage,b.atkSpd,b.aoe||0,b.cumCost,b.scoreAdj);
+    return tb.tdg - ta.tdg;
+  });
+  const maxTDGLv4 = calcTDG(rows[0].damage,rows[0].atkSpd,rows[0].aoe||0,rows[0].cumCost,rows[0].scoreAdj).tdg;
+  html = tdgHeader();
+  rows.forEach(r => { html += tdgRow(r.name, r.elem, r.damage, r.atkSpd, r.aoe||0, r.cumCost, r.scoreAdj, r.skills, maxTDGLv4); });
+  document.getElementById('tbl-tdg-lv4').innerHTML = html;
+
+  // ── Lv5：TRIPLE + PURE Lv5 ──
+  rows = [];
+  Object.entries(TRIPLE_TOWERS).forEach(([key, entry]) => {
+    const lv = entry.lv5;
+    if (!lv) return;
+    rows.push({ name: `${entry.icon} ${entry.name}`, elem: key, cumCost: 910, ...lv, scoreAdj: lv.score_adj || 1 });
+  });
+  Object.entries(PURE_TOWERS).forEach(([elem, entry]) => {
+    const lv = entry.lv5;
+    if (!lv) return;
+    rows.push({ name: `${entry.icon} ${entry.name} (pure)`, elem, cumCost: 860, ...lv, scoreAdj: lv.score_adj || 1 });
+  });
+  rows.sort((a,b) => {
+    const ta = calcTDG(a.damage,a.atkSpd,a.aoe||0,a.cumCost,a.scoreAdj);
+    const tb = calcTDG(b.damage,b.atkSpd,b.aoe||0,b.cumCost,b.scoreAdj);
+    return tb.tdg - ta.tdg;
+  });
+  const maxTDGLv5 = calcTDG(rows[0].damage,rows[0].atkSpd,rows[0].aoe||0,rows[0].cumCost,rows[0].scoreAdj).tdg;
+  html = tdgHeader();
+  rows.forEach(r => { html += tdgRow(r.name, r.elem, r.damage, r.atkSpd, r.aoe||0, r.cumCost, r.scoreAdj, r.skills, maxTDGLv5); });
+  document.getElementById('tbl-tdg-lv5').innerHTML = html;
+
+  // ── Lv6 PURE ──
+  rows = [];
+  Object.entries(PURE_TOWERS).forEach(([elem, entry]) => {
+    const lv = entry.lv6;
+    if (!lv) return;
+    rows.push({ name: `${entry.icon} ${entry.name}`, elem, cumCost: 1460, ...lv, scoreAdj: lv.score_adj || 1 });
+  });
+  rows.sort((a,b) => {
+    const ta = calcTDG(a.damage,a.atkSpd,a.aoe||0,a.cumCost,a.scoreAdj);
+    const tb = calcTDG(b.damage,b.atkSpd,b.aoe||0,b.cumCost,b.scoreAdj);
+    return tb.tdg - ta.tdg;
+  });
+  const maxTDGLv6 = calcTDG(rows[0].damage,rows[0].atkSpd,rows[0].aoe||0,rows[0].cumCost,rows[0].scoreAdj).tdg;
+  html = tdgHeader();
+  rows.forEach(r => { html += tdgRow(r.name, r.elem, r.damage, r.atkSpd, r.aoe||0, r.cumCost, r.scoreAdj, r.skills, maxTDGLv6); });
+  document.getElementById('tbl-tdg-lv6').innerHTML = html;
+}
+
+// ══════════════════════════════════════════════
+// Table D：Send ROI
+// ══════════════════════════════════════════════
+function buildTableD() {
+  const tbl = document.getElementById('tbl-send-roi');
+  let html = '<tr>'
+    + th('兵種') + th('費用') + th('+收入') + th('Count') + th('HP') + th('護甲')
+    + th('EHP 總計') + th('回本波數') + th('最晚送出波') + th('EHP/g') + th('dmgToBase') + th('技能')
+    + '</tr>';
+
+  INCOME_SENDS.forEach(s => {
+    const armorCap = Math.min(0.9, s.armor || 0);
+    const ehpTotal = s.count * s.hp / Math.max(0.01, 1 - armorCap);
+    const payback = s.cost / s.income;
+    const breakEven = CONFIG.totalWaves - payback;
+    const ehpPerGold = ehpTotal / s.cost;
+    const skillStr = (s.skills||[]).map(sk=>sk.type).join(' ') || '—';
+
+    const beCls = breakEven >= CONFIG.totalWaves ? 'ok' : breakEven < 5 ? 'err' : '';
+    const ehpCls = ehpPerGold >= 20 ? 'ok' : ehpPerGold < 5 ? 'warn' : '';
+
+    html += '<tr>'
+      + td(`${s.icon} ${s.name}`)
+      + td(s.cost + 'g')
+      + td(`+${s.income}g`)
+      + td(s.count)
+      + td(s.hp)
+      + td(fmt(s.armor||0, 2))
+      + td(fmt(ehpTotal, 0))
+      + td(fmt(payback, 1) + '波')
+      + td(`<span class="${beCls}">W${fmt(breakEven,1)}</span>`)
+      + td(`<span class="${ehpCls}">${fmt(ehpPerGold,1)}</span>`)
+      + td(s.dmgToBase)
+      + td(`<span class="info">${skillStr}</span>`)
+      + '</tr>';
+  });
+
+  tbl.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════
+// 共享資料：各等級最佳 TDG 與最佳 DPS_adj
+// ══════════════════════════════════════════════
+function buildTowerPool() {
+  // 傳回 {lv1_2, lv3, lv4, lv5, lv6} 各含 {bestTDG, bestDPS}
+  function maxOf(entries) {
+    let bestTDG = 0, bestDPS = 0;
+    entries.forEach(e => {
+      const aof = (e.aoe||0) > 0 ? 2.5 : 1.0;
+      const sa  = e.scoreAdj || 1;
+      const dps = e.damage * e.atkSpd * aof * sa;
+      const tdg = dps / e.cumCost;
+      if (tdg > bestTDG) bestTDG = tdg;
+      if (dps > bestDPS) bestDPS = dps;
+    });
+    return { bestTDG, bestDPS };
+  }
+
+  // Lv1-2
+  const basic = [];
+  BASIC_KEYS.forEach(key => {
+    BASIC_TOWERS[key].levels.forEach((lv, i) => {
+      basic.push({ ...lv, cumCost: i===0?50:130, scoreAdj:1 });
+    });
+  });
+
+  // Lv3
+  const lv3 = [];
+  Object.values(ELEM_BASE).forEach(bases => {
+    Object.values(bases).forEach(t => lv3.push({ ...t, cumCost:260, scoreAdj:1 }));
+  });
+
+  // Lv4
+  const lv4 = [];
+  Object.values(INFUSIONS).forEach(infs => {
+    Object.values(infs).forEach(entry => {
+      if (entry.lv4) lv4.push({ ...entry.lv4, cumCost:510, scoreAdj: entry.lv4.score_adj||1 });
+    });
+  });
+
+  // Lv5 (triple + pure)
+  const lv5 = [];
+  Object.values(TRIPLE_TOWERS).forEach(entry => {
+    if (entry.lv5) lv5.push({ ...entry.lv5, cumCost:910, scoreAdj:1 });
+  });
+  Object.values(PURE_TOWERS).forEach(entry => {
+    if (entry.lv5) lv5.push({ ...entry.lv5, cumCost:860, scoreAdj:1 });
+  });
+
+  // Lv6
+  const lv6 = [];
+  Object.values(PURE_TOWERS).forEach(entry => {
+    if (entry.lv6) lv6.push({ ...entry.lv6, cumCost:1460, scoreAdj:1 });
+  });
+
+  return {
+    lv1_2: maxOf(basic),
+    lv3:   maxOf(lv3),
+    lv4:   maxOf(lv4),
+    lv5:   maxOf(lv5),
+    lv6:   maxOf(lv6),
+  };
+}
+
+// ══════════════════════════════════════════════
+// Table E：Composite Balance Ratio
+// ══════════════════════════════════════════════
+function buildTableE() {
+  const pool = buildTowerPool();
+  const gf   = calcGoldFlow();
+  const wtsArr = WAVES.map(w => calcWTS(w).wts);
+
+  function tierFor(waveIdx) {
+    if (waveIdx < 3)  return pool.lv1_2;
+    if (waveIdx < 6)  return pool.lv3;
+    if (waveIdx < 9)  return pool.lv4;
+    if (waveIdx < 12) return pool.lv5;
+    return pool.lv6;
+  }
+  function tierLabel(waveIdx) {
+    if (waveIdx < 3)  return 'Lv1-2';
+    if (waveIdx < 6)  return 'Lv3';
+    if (waveIdx < 9)  return 'Lv4';
+    if (waveIdx < 12) return 'Lv5';
+    return 'Lv6';
+  }
+
+  const tbl = document.getElementById('tbl-br');
+  let html = '<tr>'
+    + th('W#') + th('名稱') + th('WTS') + th('WTS△') + th('可用金') + th('最佳層')
+    + th('Best TDG') + th('TPI') + th('BR(×路徑時間)') + th('判定')
+    + '</tr>';
+
+  WAVES.forEach((w, i) => {
+    const wts  = wtsArr[i];
+    const tier = tierFor(i);
+    const avail = gf[i].available;
+    const tpi  = avail * tier.bestTDG;
+    const PATH_TIME = 15;
+    const br   = (PATH_TIME * tpi) / wts;
+    const isBoss = !!w.isBoss;
+
+    // WTS delta
+    const delta = i === 0 ? null : wts / wtsArr[i-1];
+    let deltaStr = '<span class="info">—</span>';
+    if (delta !== null) {
+      const dcls = delta > 3.0 ? 'err' : delta < 0.5 ? 'info' : 'ok';
+      const dsym = delta > 3.0 ? ' ⚠️spike' : delta < 0.5 ? ' 💤drop' : '';
+      deltaStr = `<span class="${dcls}">×${fmt(delta,2)}${dsym}</span>`;
+    }
+
+    // BR colour
+    let brCls, brLabel;
+    if      (br < 0.4)  { brCls = 'err';  brLabel = '🔴 過難'; }
+    else if (br < 0.8)  { brCls = 'warn'; brLabel = '🟡 挑戰'; }
+    else if (br < 2.5)  { brCls = 'ok';   brLabel = '🟢 理想'; }
+    else                { brCls = 'info';  brLabel = '⬜ 輕鬆'; }
+
+    const rowCls = isBoss ? ' class="boss-row"' : '';
+    html += `<tr${rowCls}>`
+      + td(i+1)
+      + td(`${w.icon||''} ${w.name}`)
+      + td(`<span class="${br < 0.8 ? 'warn' : ''}">${fmt(wts,0)}</span>`)
+      + td(deltaStr)
+      + td(avail + 'g')
+      + td(`<span class="info">${tierLabel(i)}</span>`)
+      + td(fmt(tier.bestTDG, 4))
+      + td(fmt(tpi, 0))
+      + td(`<span class="${brCls}">${fmt(br,2)}</span>`)
+      + td(`<span class="${brCls}">${brLabel}</span>`)
+      + '</tr>';
+  });
+
+  tbl.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════
+// Table F：PVP PThreat Matrix
+// ══════════════════════════════════════════════
+function buildTableF() {
+  const pool = buildTowerPool();
+  const PATH_TIME = 15; // 秒
+
+  // 對手等級 × DPS：用各等級最佳 DPS_adj（單塔，保守估算）
+  const opponentLevels = [
+    { label: 'vs Lv2',  dps: pool.lv1_2.bestDPS },
+    { label: 'vs Lv3',  dps: pool.lv3.bestDPS   },
+    { label: 'vs Lv4',  dps: pool.lv4.bestDPS   },
+    { label: 'vs Lv5',  dps: pool.lv5.bestDPS   },
+  ];
+
+  const tbl = document.getElementById('tbl-pthreat');
+  let html = '<tr>'
+    + th('兵種（費用）')
+    + opponentLevels.map(op => th(`${op.label}<br><span class="info">${fmt(op.dps,1)} DPS</span>`)).join('')
+    + th('dmgToBase') + th('EHP 總計')
+    + '</tr>';
+
+  INCOME_SENDS.forEach(s => {
+    const armorCap = Math.min(0.9, s.armor||0);
+    const ehpTotal = s.count * s.hp / Math.max(0.01, 1 - armorCap);
+
+    const cells = opponentLevels.map(op => {
+      const killTime  = ehpTotal / op.dps;
+      const pThreat   = killTime / PATH_TIME;
+      let cls, sym;
+      if      (pThreat > 1.0) { cls = 'err';  sym = ' 🔴'; }
+      else if (pThreat > 0.5) { cls = 'warn'; sym = ' 🟡'; }
+      else                    { cls = 'ok';   sym = '';    }
+      return `<td><span class="${cls}">${fmt(pThreat,2)}${sym}</span></td>`;
+    }).join('');
+
+    html += '<tr>'
+      + `<td>${s.icon} ${s.name}（${s.cost}g）</td>`
+      + cells
+      + td(s.dmgToBase)
+      + td(fmt(ehpTotal, 0))
+      + '</tr>';
+  });
+
+  // 附上各等級實際 DPS 來源備注
+  html += '<tr style="border-top:1px solid #333">'
+    + `<td class="info" colspan="${2 + opponentLevels.length}">` +
+      opponentLevels.map(op => `${op.label}: ${fmt(op.dps,1)} DPS`).join('　') +
+      '</td></tr>';
+
+  tbl.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════
+// 執行
+// ══════════════════════════════════════════════
+buildTableA();
+buildTableB();
+buildTableC();
+buildTableD();
+buildTableE();
+buildTableF();
+</script>
+</body>
+</html>

@@ -1,21 +1,32 @@
-session: 2026-05-14
-resume_trigger: "繼續塔防測試工具"
+session: 2026-05-16
+resume_trigger: "繼續塔防UI編輯器"
 project: tower-defense-prototype
 
 completed:
-  - pvp-ready-fix/step1: PVP 準備計數公式修正（含自己）+ onNetMsg 'ready' 即時刷新 showWavePreview()
+  - balance-eval: 建立 balance-eval.html 平衡評估工具（6張表：WTS/GoldFlow/TDG/SendROI/BR/PThreat）
+  - balance-eval-guide: 修正 BR 公式（乘上路徑時間15s，閾值改0.4/0.8/2.5）
+  - ui-editor: 新增 UI Layout Editor + Mobile Preview 功能
+      - Alt+E 開關浮動面板，即時調整 top/bot bar 高度、sidebar 寬度、mobile 按鈕高度
+      - CSS custom properties：--top-bar-h / --bot-bar-h / --sidebar-w / --mobile-btn-h
+      - isMobileLayout() helper 統一替代 3 處 matchMedia 呼叫
+      - toggleMobilePreview(enabled, width) 切換手機版面預覽（375/390/414px）
+      - body.mobile-preview CSS class 複製所有 mobile media query 規則
 
 current_state:
-  test_html: 三層自動測試，打開即執行，< 1 秒完成
+  index_html: |
+    UI Editor panel（Alt+E 開關），mobile preview toggle，CSS custom properties 已設定
+    手機實機不受影響（pointer: coarse 隱藏 editor）
   game_js: |
-    手機升級扣金正常，HUD 金幣於送兵/升級後更新，送兵按鈕顯示 remaining/quota
-    PVP ready 計數修正：3 人局顯示 1/3 → 2/3 → 3/3（含自己），收到他人 ready 即時刷新
-  mobile_upgrade: Lv4 pure 只顯示 Lv5；Lv5 pure picks≥3 顯示 Lv6
-  build_html: 兩段式 inline，正常產出 game.html
+    isMobileLayout() / toggleMobilePreview() / window._mobilePreview flag 已加入頂端
+    PVP ready 計數修正：3 人局顯示 1/3 → 2/3 → 3/3（含自己）
+  balance_eval_html: |
+    自動化平衡評估工具，BR 公式已修正（×15 路徑時間）
+    結果：W1-6 輕鬆、W8-12 理想、W16 挑戰、W20 Boss 過難（設計意圖）
 
 next:
-  - 瀏覽器測試：test.html 開啟驗證、手機升級扣金 + Lv6 升級流程、PVP 3人準備計數
+  - 瀏覽器測試：Alt+E 開啟 editor、調整數值確認即時生效、mobile preview 切換
   - plans/active/pvp-join-name-fix/（PVP 加入名稱修正）
   - plans/active/mobile-ux-redesign/（手機 UX 整體重設計）
-  - plans/active/elem-vs-class-design/（PVP 後決定）
   - plans/active/skill-test-chill-fix/（chill rate 6 vs 15）
+  - plans/active/pvp-join-name-fix/
+  - 根據 balance-eval 結果調整 W1-6 難度（目前過於輕鬆）

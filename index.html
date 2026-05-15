@@ -6,12 +6,19 @@
 <title>塔防原型 v6.0</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
+:root {
+  --top-bar-h: 40px;
+  --bot-bar-h: 40px;
+  --sidebar-w: 340px;
+  --sidebar-w-tablet: 280px;
+  --mobile-btn-h: 44px;
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { touch-action: manipulation; }
 body { touch-action: manipulation; background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
 
 #game-container { display: flex; height: 100vh; height: 100dvh; height: var(--real-vh, 100dvh); }
-#sidebar { width: 340px; background: #16213e; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+#sidebar { width: var(--sidebar-w); background: #16213e; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 #canvas-wrap { flex: 1; position: relative; }
 canvas { display: block; touch-action: manipulation; max-height: 100%; }
 
@@ -67,7 +74,8 @@ canvas { display: block; touch-action: manipulation; max-height: 100%; }
 /* Info bar */
 #info-bar {
   position: absolute; top: 0; left: 0; right: 0;
-  display: flex; justify-content: space-between; padding: 8px 16px;
+  height: var(--top-bar-h);
+  display: flex; justify-content: space-between; align-items: center; padding: 0 16px;
   background: rgba(15,52,96,0.9); font-size: 13px; z-index: 10;
 }
 #info-bar span { font-weight: bold; }
@@ -182,8 +190,9 @@ canvas { display: block; touch-action: manipulation; max-height: 100%; }
 /* AI opponent panel */
 #ai-bar {
   position: absolute; bottom: 0; left: 0; right: 0;
+  height: var(--bot-bar-h);
   display: flex; justify-content: center; align-items: center; gap: 16px;
-  padding: 6px 16px; background: rgba(96,15,15,0.9); font-size: 12px; z-index: 10;
+  padding: 0 16px; background: rgba(96,15,15,0.9); font-size: 12px; z-index: 10;
 }
 #ai-bar .ai-hp-bar {
   width: 200px; height: 14px; background: #333; border-radius: 7px; overflow: hidden;
@@ -236,7 +245,7 @@ canvas { display: block; touch-action: manipulation; max-height: 100%; }
 
 /* 平板 */
 @media (max-width: 1024px) {
-  #sidebar { width: 280px; padding: 8px; font-size: 11px; }
+  #sidebar { width: var(--sidebar-w-tablet); padding: 8px; font-size: 11px; }
   #sidebar .panel { padding: 6px 8px; }
   #ai-bar .ai-hp-bar { width: 140px; }
 }
@@ -335,7 +344,7 @@ canvas { display: block; touch-action: manipulation; max-height: 100%; }
     cursor: pointer;
     text-align: center;
     min-width: 48px;
-    min-height: 44px;
+    min-height: var(--mobile-btn-h);
     line-height: 1.3;
   }
   .mobile-hud-send-btn.cannot-afford { opacity: 0.45; }
@@ -419,6 +428,51 @@ canvas { display: block; touch-action: manipulation; max-height: 100%; }
     flex-shrink: 0;
     white-space: nowrap;
   }
+}
+
+/* ═══ Mobile Preview Mode（PC 模擬手機版面）═══ */
+body.mobile-preview #game-container { flex-direction: column; }
+body.mobile-preview #sidebar {
+  position: fixed; top: 0; right: -100%; width: 85vw; max-width: 340px;
+  height: 100vh; z-index: 50; transition: right 0.3s ease;
+  box-shadow: -4px 0 20px rgba(0,0,0,0.6);
+}
+body.mobile-preview #sidebar.open { right: 0; }
+body.mobile-preview #sidebar-toggle { display: inline-block; }
+body.mobile-preview #sidebar-backdrop {
+  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5); z-index: 49;
+}
+body.mobile-preview #sidebar-backdrop.show { display: block; }
+body.mobile-preview #canvas-wrap { flex: 1; width: 100%; min-height: 0; overflow: hidden; }
+body.mobile-preview #info-bar { flex-wrap: wrap; gap: 4px 10px; padding: 4px 8px; font-size: 11px; }
+body.mobile-preview #ai-bar { padding: 4px 8px; font-size: 11px; flex-wrap: wrap; gap: 4px; }
+body.mobile-preview #ai-bar .ai-hp-bar { width: 100px; height: 12px; }
+body.mobile-preview #ai-bar .ai-hp-text { font-size: 9px; line-height: 12px; }
+body.mobile-preview .overlay h1 { font-size: 22px; }
+body.mobile-preview .overlay button { padding: 8px 18px; font-size: 14px; }
+body.mobile-preview .overlay p { font-size: 12px; }
+body.mobile-preview #reward-overlay h2 { font-size: 18px; }
+body.mobile-preview .reward-card { width: 140px; padding: 10px; }
+body.mobile-preview .reward-card .reward-icon { font-size: 28px; }
+body.mobile-preview .reward-card .reward-name { font-size: 12px; }
+body.mobile-preview #wave-announce { font-size: 20px; }
+body.mobile-preview #start-screen h1 { font-size: 20px; }
+body.mobile-preview .char-pick { width: 110px; padding: 8px; }
+body.mobile-preview .start-btn { padding: 8px 20px; font-size: 14px; }
+body.mobile-preview .tower-select-popup { font-size: 11px; }
+body.mobile-preview .tower-select-btn { padding: 6px 8px; font-size: 12px; min-width: 50px; }
+body.mobile-preview #info-overlay .overlay-inner,
+body.mobile-preview #info-content { max-height: 80vh; overflow-y: auto; }
+body.mobile-preview #mobile-hud {
+  flex-shrink: 0; width: 100%; display: flex !important; align-items: center;
+  gap: 6px; padding: 6px 8px; background: rgba(10,10,30,0.88);
+  border-top: 1px solid #333; min-height: 52px; flex-wrap: nowrap;
+  overflow-x: auto; touch-action: manipulation; box-sizing: border-box;
+}
+body.mobile-preview #mobile-hud-sends,
+body.mobile-preview #mobile-hud-upgrade {
+  display: flex; align-items: center; gap: 5px; flex: 1; flex-wrap: nowrap; overflow-x: auto;
 }
 
 /* 極小螢幕（<480px） */
@@ -1258,5 +1312,189 @@ function buildCapsTab() {
 <!-- ── End Skill Reference Overlay ────────────────────────────── -->
 <div id="mobile-debug" style="display:none;position:fixed;bottom:0;right:0;width:280px;max-height:180px;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font-size:10px;font-family:monospace;padding:4px;z-index:9999;pointer-events:none;"></div>
 <button id="mobile-debug-toggle" style="display:none;position:fixed;top:4px;right:4px;z-index:9999;background:#333;color:#fff;border:none;padding:4px 8px;font-size:10px;border-radius:4px;">DBG</button>
+
+<!-- ── UI Editor Panel ─────────────────────────────────────── -->
+<style>
+#ui-editor {
+  position: fixed; top: 52px; right: 10px;
+  background: #1a1a2e; border: 1px solid #4a9eff;
+  border-radius: 8px; padding: 10px 14px;
+  color: #e0e0e0; font-size: 12px; font-family: monospace;
+  z-index: 10000; min-width: 250px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+  user-select: none;
+}
+#ui-editor-header {
+  font-weight: bold; margin-bottom: 10px;
+  display: flex; justify-content: space-between; align-items: center;
+  color: #4a9eff;
+}
+#ui-editor-close {
+  background: none; border: none; color: #aaa; cursor: pointer;
+  font-size: 18px; line-height: 1; padding: 0 2px;
+}
+#ui-editor-close:hover { color: #fff; }
+.ue-row {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 7px;
+}
+.ue-row label:first-child { width: 82px; color: #aaa; flex-shrink: 0; }
+.ue-row input[type=range] { flex: 1; accent-color: #4a9eff; cursor: pointer; }
+.ue-row input[type=number] {
+  width: 46px; background: #0f3460; border: 1px solid #4a9eff;
+  color: #e0e0e0; padding: 2px 4px; border-radius: 3px;
+  text-align: center; font-size: 11px;
+}
+.ue-unit { color: #666; font-size: 11px; }
+.ue-divider { border: none; border-top: 1px solid #2a2a4e; margin: 8px 0; }
+.ue-preset {
+  background: #0f3460; border: 1px solid #4a9eff; color: #4a9eff;
+  padding: 3px 9px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  font-family: monospace;
+}
+.ue-preset:hover { background: #1a4a8a; }
+.ue-preset.active { background: #4a9eff; color: #000; }
+#ue-reset {
+  width: 100%; background: #2d2d44; border: 1px solid #555;
+  color: #ccc; padding: 5px; border-radius: 4px; cursor: pointer;
+  font-size: 11px; margin-top: 4px;
+}
+#ue-reset:hover { border-color: #4a9eff; color: #fff; }
+/* toggle switch */
+.ue-toggle { position: relative; display: inline-block; width: 38px; height: 20px; flex-shrink: 0; }
+.ue-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.ue-toggle-track {
+  position: absolute; inset: 0; background: #333; border-radius: 20px;
+  cursor: pointer; transition: background 0.2s;
+}
+.ue-toggle input:checked ~ .ue-toggle-track { background: #4a9eff; }
+.ue-toggle-track::before {
+  content: ''; position: absolute; height: 14px; width: 14px;
+  left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform 0.2s;
+}
+.ue-toggle input:checked ~ .ue-toggle-track::before { transform: translateX(18px); }
+/* 手機實機隱藏 */
+@media (pointer: coarse) { #ui-editor { display: none !important; } }
+</style>
+
+<div id="ui-editor" style="display:none">
+  <div id="ui-editor-header">🔧 UI Editor <button id="ui-editor-close">×</button></div>
+  <div class="ue-row">
+    <label>Top Bar</label>
+    <input type="range" id="ue-top" min="28" max="64" step="2" value="40">
+    <input type="number" id="ue-top-num" min="28" max="64" value="40">
+    <span class="ue-unit">px</span>
+  </div>
+  <div class="ue-row">
+    <label>Bot Bar</label>
+    <input type="range" id="ue-bot" min="28" max="64" step="2" value="40">
+    <input type="number" id="ue-bot-num" min="28" max="64" value="40">
+    <span class="ue-unit">px</span>
+  </div>
+  <div class="ue-row">
+    <label>Sidebar</label>
+    <input type="range" id="ue-sidebar" min="200" max="480" step="10" value="340">
+    <input type="number" id="ue-sidebar-num" min="200" max="480" value="340">
+    <span class="ue-unit">px</span>
+  </div>
+  <div class="ue-row">
+    <label>Mobile Btn</label>
+    <input type="range" id="ue-mbtn" min="32" max="72" step="2" value="44">
+    <input type="number" id="ue-mbtn-num" min="32" max="72" value="44">
+    <span class="ue-unit">px</span>
+  </div>
+  <hr class="ue-divider">
+  <div class="ue-row">
+    <label>📱 Mobile</label>
+    <label class="ue-toggle">
+      <input type="checkbox" id="ue-mobile-preview">
+      <span class="ue-toggle-track"></span>
+    </label>
+    <span id="ue-width-row" style="display:none;gap:4px;display:none">
+      <button class="ue-preset" data-w="375">375</button>
+      <button class="ue-preset active" data-w="390">390</button>
+      <button class="ue-preset" data-w="414">414</button>
+    </span>
+  </div>
+  <hr class="ue-divider">
+  <button id="ue-reset">重置預設值</button>
+</div>
+
+<script>
+(function() {
+  const DEFAULTS = { top: 40, bot: 40, sidebar: 340, mbtn: 44 };
+  const root = document.documentElement;
+
+  // 開關面板（Alt+E）
+  const panel = document.getElementById('ui-editor');
+  document.addEventListener('keydown', function(e) {
+    if (e.altKey && (e.key === 'e' || e.key === 'E')) {
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+  });
+  document.getElementById('ui-editor-close').onclick = function() {
+    panel.style.display = 'none';
+  };
+
+  // slider ↔ number 雙向同步 + 套用 CSS var + 觸發 resize
+  function bindPair(sliderId, numId, cssVar, triggerResize) {
+    const sl = document.getElementById(sliderId);
+    const nm = document.getElementById(numId);
+    function apply(v) {
+      v = Math.max(+sl.min, Math.min(+sl.max, +v));
+      sl.value = v; nm.value = v;
+      root.style.setProperty(cssVar, v + 'px');
+      if (triggerResize && window._game) window._game.resizeCanvas();
+    }
+    sl.oninput = function() { apply(sl.value); };
+    nm.oninput = function() { apply(nm.value); };
+  }
+
+  bindPair('ue-top',     'ue-top-num',     '--top-bar-h',    true);
+  bindPair('ue-bot',     'ue-bot-num',     '--bot-bar-h',    true);
+  bindPair('ue-sidebar', 'ue-sidebar-num', '--sidebar-w',    false);
+  bindPair('ue-mbtn',    'ue-mbtn-num',    '--mobile-btn-h', false);
+
+  // Mobile Preview toggle
+  var previewWidth = 390;
+  var widthRow = document.getElementById('ue-width-row');
+  document.getElementById('ue-mobile-preview').onchange = function() {
+    widthRow.style.display = this.checked ? 'inline-flex' : 'none';
+    if (window.toggleMobilePreview) window.toggleMobilePreview(this.checked, previewWidth);
+  };
+
+  // Width presets
+  document.querySelectorAll('.ue-preset').forEach(function(btn) {
+    btn.onclick = function() {
+      previewWidth = +this.dataset.w;
+      document.querySelectorAll('.ue-preset').forEach(function(b) { b.classList.remove('active'); });
+      this.classList.add('active');
+      if (document.getElementById('ue-mobile-preview').checked && window.toggleMobilePreview) {
+        window.toggleMobilePreview(true, previewWidth);
+      }
+    };
+  });
+
+  // 重置
+  document.getElementById('ue-reset').onclick = function() {
+    root.style.setProperty('--top-bar-h',    DEFAULTS.top    + 'px');
+    root.style.setProperty('--bot-bar-h',    DEFAULTS.bot    + 'px');
+    root.style.setProperty('--sidebar-w',    DEFAULTS.sidebar + 'px');
+    root.style.setProperty('--mobile-btn-h', DEFAULTS.mbtn   + 'px');
+    document.getElementById('ue-top').value         = DEFAULTS.top;
+    document.getElementById('ue-top-num').value     = DEFAULTS.top;
+    document.getElementById('ue-bot').value         = DEFAULTS.bot;
+    document.getElementById('ue-bot-num').value     = DEFAULTS.bot;
+    document.getElementById('ue-sidebar').value     = DEFAULTS.sidebar;
+    document.getElementById('ue-sidebar-num').value = DEFAULTS.sidebar;
+    document.getElementById('ue-mbtn').value        = DEFAULTS.mbtn;
+    document.getElementById('ue-mbtn-num').value    = DEFAULTS.mbtn;
+    if (window._game) window._game.resizeCanvas();
+    document.getElementById('ue-mobile-preview').checked = false;
+    widthRow.style.display = 'none';
+    if (window.toggleMobilePreview) window.toggleMobilePreview(false);
+  };
+})();
+</script>
+<!-- ── End UI Editor Panel ────────────────────────────────── -->
 </body>
 </html>

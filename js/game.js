@@ -4,6 +4,15 @@
 
 window._mobilePreview = false;
 
+// Grid config: load from localStorage before Game construction
+(function() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('tdGridConfig') || '{}');
+    if (saved.gridCols >= 10 && saved.gridCols <= 30) CONFIG.gridCols = saved.gridCols;
+    if (saved.gridRows >= 5  && saved.gridRows <= 15) CONFIG.gridRows = saved.gridRows;
+  } catch(e) {}
+})();
+
 function isMobileLayout() {
   return window._mobilePreview ||
     window.matchMedia('(max-width: 768px), (max-height: 430px) and (orientation: landscape)').matches;
@@ -552,39 +561,43 @@ class Game {
 
     const topPad = 40;  // info-bar
     const botPad = 40;  // ai-bar
-    const totalRows = CONFIG.gridRows + 1 + 10 + 1; // 10 player + 1 gap + 10 AI + 1 base overflow
+    const totalRows = CONFIG.gridRows * 2 + 2; // player + 1 gap + AI (mirrors player) + 1 base overflow
     this.cellSize = Math.min(Math.floor(w / CONFIG.gridCols), Math.floor((h - topPad - botPad) / totalRows));
     this.offsetX = Math.floor((w - CONFIG.gridCols * this.cellSize) / 2);
     this.offsetY = topPad + Math.floor((h - topPad - botPad - totalRows * this.cellSize) / 2);
 
     this.grid = Array.from({length: CONFIG.gridRows}, () => Array(CONFIG.gridCols).fill(0));
 
-    // 玩家 U 型螺旋路徑（外圈→U轉→內圈基地）
+    // 玩家 U 型螺旋路徑（比例公式，gridRows=10 時與原始完全相同）
     this.path = [];
     const cols = CONFIG.gridCols;
+    const rows = CONFIG.gridRows;
+    const pr1 = Math.floor(rows / 3);       // gridRows=10: 3
+    const pr2 = Math.floor(rows * 2 / 3);   // gridRows=10: 6
+    const pr3 = rows - 1;                    // gridRows=10: 9
     for (let x = 0; x < cols - 2; x++) this.path.push({x, y: 0});
-    for (let y = 1; y <= 3; y++) this.path.push({x: cols-3, y});
-    for (let x = cols-4; x >= 2; x--) this.path.push({x, y: 3});
-    for (let y = 4; y <= 6; y++) this.path.push({x: 2, y});
-    for (let x = 3; x < cols - 2; x++) this.path.push({x, y: 6});
-    for (let y = 7; y <= 9; y++) this.path.push({x: cols-3, y});
-    for (let x = cols-4; x >= 0; x--) this.path.push({x, y: 9});
+    for (let y = 1; y <= pr1; y++) this.path.push({x: cols-3, y});
+    for (let x = cols-4; x >= 2; x--) this.path.push({x, y: pr1});
+    for (let y = pr1+1; y <= pr2; y++) this.path.push({x: 2, y});
+    for (let x = 3; x < cols - 2; x++) this.path.push({x, y: pr2});
+    for (let y = pr2+1; y <= pr3; y++) this.path.push({x: cols-3, y});
+    for (let x = cols-4; x >= 0; x--) this.path.push({x, y: pr3});
 
     for (const p of this.path) {
       if (p.y >= 0 && p.y < CONFIG.gridRows && p.x >= 0 && p.x < CONFIG.gridCols)
         this.grid[p.y][p.x] = 1;
     }
 
-    // AI 防線路徑
+    // AI 防線路徑（與玩家路徑結構相同，offset 至 aiStartRow）
     const aiStartRow = CONFIG.gridRows + 1;
     this.aiPath = [];
     for (let x = 0; x < cols - 2; x++) this.aiPath.push({x, y: aiStartRow});
-    for (let y = aiStartRow+1; y <= aiStartRow+3; y++) this.aiPath.push({x: cols-3, y});
-    for (let x = cols-4; x >= 2; x--) this.aiPath.push({x, y: aiStartRow + 3});
-    for (let y = aiStartRow+4; y <= aiStartRow+6; y++) this.aiPath.push({x: 2, y});
-    for (let x = 3; x < cols - 2; x++) this.aiPath.push({x, y: aiStartRow + 6});
-    for (let y = aiStartRow+7; y <= aiStartRow+9; y++) this.aiPath.push({x: cols-3, y});
-    for (let x = cols-4; x >= 0; x--) this.aiPath.push({x, y: aiStartRow + 9});
+    for (let y = aiStartRow+1; y <= aiStartRow+pr1; y++) this.aiPath.push({x: cols-3, y});
+    for (let x = cols-4; x >= 2; x--) this.aiPath.push({x, y: aiStartRow+pr1});
+    for (let y = aiStartRow+pr1+1; y <= aiStartRow+pr2; y++) this.aiPath.push({x: 2, y});
+    for (let x = 3; x < cols - 2; x++) this.aiPath.push({x, y: aiStartRow+pr2});
+    for (let y = aiStartRow+pr2+1; y <= aiStartRow+pr3; y++) this.aiPath.push({x: cols-3, y});
+    for (let x = cols-4; x >= 0; x--) this.aiPath.push({x, y: aiStartRow+pr3});
 
     if (isMobileLayout()) {
       // 先顯示 debug overlay，確保後續所有 _dbg() 都能記錄
@@ -625,7 +638,7 @@ class Game {
     this.ctx.scale(dpr, dpr);
     const topPad = 40;
     const botPad = 40;
-    const totalRows = CONFIG.gridRows + 1 + 10 + 1;
+    const totalRows = CONFIG.gridRows * 2 + 2;
     this.cellSize = Math.min(Math.floor(w / CONFIG.gridCols), Math.floor((h - topPad - botPad) / totalRows));
     this.offsetX = Math.floor((w - CONFIG.gridCols * this.cellSize) / 2);
     this.offsetY = topPad + Math.floor((h - topPad - botPad - totalRows * this.cellSize) / 2);
@@ -1897,6 +1910,9 @@ class Game {
       // 戰鬥中：隱藏 topbar 按鈕
       if (topReadyBtn) topReadyBtn.style.display = 'none';
     }
+
+    // 手機底部送兵列：每次進入 pre_wave 都重建
+    this.buildMobileHud();
   }
 
   miniPreview(idx) {

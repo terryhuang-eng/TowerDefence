@@ -428,6 +428,18 @@ canvas { display: block; touch-action: manipulation; max-height: 100%; }
     flex-shrink: 0;
     white-space: nowrap;
   }
+
+  /* sidebar panel 手機觸控優化 */
+  #sidebar .panel { padding: 10px 12px; }
+  #sidebar .panel h3 { font-size: 13px; margin-bottom: 6px; }
+  #battle-log { max-height: 180px; }
+  .income-btn {
+    min-height: 44px; padding: 8px 14px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .upgrade-opt {
+    min-height: 44px; padding: 8px 12px;
+  }
 }
 
 /* ═══ Mobile Preview Mode（PC 模擬手機版面）═══ */
@@ -473,6 +485,16 @@ body.mobile-preview #mobile-hud {
 body.mobile-preview #mobile-hud-sends,
 body.mobile-preview #mobile-hud-upgrade {
   display: flex; align-items: center; gap: 5px; flex: 1; flex-wrap: nowrap; overflow-x: auto;
+}
+body.mobile-preview #sidebar .panel { padding: 10px 12px; }
+body.mobile-preview #sidebar .panel h3 { font-size: 13px; margin-bottom: 6px; }
+body.mobile-preview #battle-log { max-height: 180px; }
+body.mobile-preview .income-btn {
+  min-height: 44px; padding: 8px 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+body.mobile-preview .upgrade-opt {
+  min-height: 44px; padding: 8px 12px;
 }
 
 /* 極小螢幕（<480px） */
@@ -1416,6 +1438,24 @@ function buildCapsTab() {
     </span>
   </div>
   <hr class="ue-divider">
+  <div style="color:#4a9eff;font-size:11px;margin-bottom:6px;">⬛ 格子大小（重新開局生效）</div>
+  <div class="ue-row">
+    <label>Cols</label>
+    <input type="range" id="ue-cols" min="10" max="30" step="1" value="20">
+    <input type="number" id="ue-cols-num" min="10" max="30" value="20">
+    <span class="ue-unit">格</span>
+  </div>
+  <div class="ue-row">
+    <label>Rows</label>
+    <input type="range" id="ue-rows" min="5" max="15" step="1" value="10">
+    <input type="number" id="ue-rows-num" min="5" max="15" value="10">
+    <span class="ue-unit">格</span>
+  </div>
+  <div class="ue-row">
+    <button id="ue-grid-save" style="flex:1;background:#0f3460;border:1px solid #4a9eff;color:#4a9eff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">💾 儲存格子設定</button>
+    <span id="ue-grid-msg" style="font-size:10px;color:#4c4;display:none;margin-left:6px;">已儲存 ✓</span>
+  </div>
+  <hr class="ue-divider">
   <button id="ue-reset">重置預設值</button>
 </div>
 
@@ -1453,6 +1493,38 @@ function buildCapsTab() {
   bindPair('ue-bot',     'ue-bot-num',     '--bot-bar-h',    true);
   bindPair('ue-sidebar', 'ue-sidebar-num', '--sidebar-w',    false);
   bindPair('ue-mbtn',    'ue-mbtn-num',    '--mobile-btn-h', false);
+
+  // Grid dimension controls (save to localStorage, apply on next game start)
+  (function() {
+    var savedGrid = JSON.parse(localStorage.getItem('tdGridConfig') || '{}');
+    if (savedGrid.gridCols) {
+      document.getElementById('ue-cols').value     = savedGrid.gridCols;
+      document.getElementById('ue-cols-num').value = savedGrid.gridCols;
+    }
+    if (savedGrid.gridRows) {
+      document.getElementById('ue-rows').value     = savedGrid.gridRows;
+      document.getElementById('ue-rows-num').value = savedGrid.gridRows;
+    }
+    function syncPair(sliderId, numId) {
+      var sl = document.getElementById(sliderId);
+      var nm = document.getElementById(numId);
+      sl.oninput = function() { nm.value = sl.value; };
+      nm.oninput = function() {
+        var v = Math.max(+sl.min, Math.min(+sl.max, +nm.value));
+        sl.value = v; nm.value = v;
+      };
+    }
+    syncPair('ue-cols', 'ue-cols-num');
+    syncPair('ue-rows', 'ue-rows-num');
+    document.getElementById('ue-grid-save').onclick = function() {
+      var cols = +document.getElementById('ue-cols').value;
+      var rows = +document.getElementById('ue-rows').value;
+      localStorage.setItem('tdGridConfig', JSON.stringify({gridCols: cols, gridRows: rows}));
+      var msg = document.getElementById('ue-grid-msg');
+      msg.style.display = 'inline';
+      setTimeout(function() { msg.style.display = 'none'; }, 2000);
+    };
+  })();
 
   // Mobile Preview toggle
   var previewWidth = 390;
